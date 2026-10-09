@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>RPG Demo</title>
+  <style>
+    /* Reset margins so the game canvas sits flush against the page */
+    body {
+      margin: 0;
+      background: #000;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+    }
+
+    /* Wrapper establishes a positioning context so the text overlay
+       can be placed exactly on top of the canvas using absolute
+       positioning, regardless of where the page centers things. */
+    #game-wrapper {
+      position: relative;
+      width: 640px;   /* 320 game px * 2 zoom = 640 CSS px */
+      height: 480px;  /* 240 game px * 2 zoom = 480 CSS px */
+    }
+
+    /* This div sits exactly on top of the Phaser canvas. Individual
+       text elements get added/removed from inside it by our scenes.
+       pointer-events: none so it never blocks clicks/input meant for
+       the canvas underneath. The opacity transition lets us fade the
+       whole overlay in/out in sync with Phaser's camera fades, via
+       domText.fadeOut()/fadeIn() — without this, text would pop
+       instantly instead of fading like the rest of the screen. */
+    #text-overlay {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      pointer-events: none;
+      overflow: hidden;
+      opacity: 1;
+      transition: opacity 400ms linear;
+    }
+
+    /* Individual overlay text elements. Position is set inline via
+       JS (left/top) to match each piece of text's intended game
+       coordinate, scaled up by the same 4x zoom factor. */
+    .overlay-text {
+      position: absolute;
+      color: #ffffff;
+      font-family: monospace;
+      white-space: nowrap;
+      text-align: center;
+      /* transform centers the text horizontally on its given x,y
+         point, matching Phaser's setOrigin(0.5) behavior we were
+         using before. */
+      transform: translate(-50%, -50%);
+    }
+  </style>
+</head>
+<body>
+  <div id="game-wrapper">
+    <!-- Phaser will inject a <canvas> into this div -->
+    <div id="game-container"></div>
+    <!-- Crisp HTML text renders here, positioned to line up with the canvas -->
+    <div id="text-overlay"></div>
+  </div>
+
+  <!-- Load Phaser itself from a CDN (no build step needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+
+  <!-- Our own code, loaded after Phaser so it can use the Phaser object -->
+  <script src="src/domText.js"></script>
+  <script src="src/editorData.js"></script>
+  <script src="src/gameState.js"></script>
+  <script src="src/saveSystem.js"></script>
+  <script src="src/scenes/BootScene.js"></script>
+  <script src="src/scenes/TitleScene.js"></script>
+  <script src="src/scenes/MapScene.js"></script>
+  <script src="src/scenes/BattleScene.js"></script>
+  <script src="src/scenes/GameOverScene.js"></script>
+  <script src="src/main.js"></script>
+</body>
+</html>
