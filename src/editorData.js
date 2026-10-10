@@ -37,9 +37,9 @@ const EditorData = {
         id: 'slime_01',
         name: 'Slime',
         type: 'static',
-        mapPosition: { tileX: 14, tileY: 9 },
+        mapPosition: { tileX: 32, tileY: 10 },
         stats: {
-          hp: 25,
+          hp: 20,
           attackMin: 2,
           attackMax: 6,
           xpReward: 10,

@@ -114,12 +114,12 @@ class MapScene extends Phaser.Scene {
     this.map = map;
 
     // --- Player setup ---
-    // Start the player at tile (2, 2) — inside the wall border, on grass.
+    // Start the player in the town plaza (clear floor, away from buildings).
     // Tile coords -> pixel coords: multiply by TILE_SIZE.
     // We add TILE_SIZE/2 to center the sprite within the tile rather
     // than aligning its top-left corner to the tile's top-left corner.
-    const startTileX = 6;
-    const startTileY = 3;
+    const startTileX = 5;
+    const startTileY = 13;
     this.player = this.add.image(
       startTileX * this.TILE_SIZE + this.TILE_SIZE / 2,
       startTileY * this.TILE_SIZE + this.TILE_SIZE / 2,
