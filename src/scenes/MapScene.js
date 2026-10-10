@@ -15,12 +15,12 @@ class MapScene extends Phaser.Scene {
     this.TILE_SIZE = 16;
 
     // Which tile values count as "blocked" (can't walk onto them).
-    // Kenney tiny_dungeon tile IDs (1-based):
-    //   1  = void/black border → blocked
+    // Kenney tiny_dungeon tile IDs (1-based, but 0 = empty/void):
+    //   0  = empty (no tile) → border void, treated as blocked
     //  27  = wall divider row  → blocked
     //  41  = detailed floor    → walkable
     //  50  = stone floor       → walkable
-    this.BLOCKED_TILES = [1, 27];
+    this.BLOCKED_TILES = [0, 27];
 
     // Tracks whether the player is currently mid-slide between tiles.
     // While true, new movement input is ignored — this is what makes
@@ -95,6 +95,10 @@ class MapScene extends Phaser.Scene {
     // Defensive reset: ensure the text overlay is fully visible,
     // regardless of what opacity the previous scene left it at.
     domText.fadeIn();
+
+    // Black background so empty (void) tile borders show as black rather
+    // than the default Phaser grey.
+    this.cameras.main.setBackgroundColor('#000000');
 
     // Build the tilemap object from the loaded JSON
     const map = this.make.tilemap({ key: 'map' });
