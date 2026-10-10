@@ -132,6 +132,22 @@ class MapScene extends Phaser.Scene {
     this.playerTileX = startTileX;
     this.playerTileY = startTileY;
 
+    // --- Camera setup ---
+    // startFollow() tells Phaser to keep the camera centered on the
+    // player sprite as it moves. The lerp values (0.1, 0.1) make the
+    // camera ease toward the target rather than snapping instantly —
+    // lower = smoother/slower follow. For grid-locked movement a
+    // slightly higher value (0.15) keeps it tight without feeling laggy.
+    this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
+
+    // setBounds clamps the camera so it never shows outside the map.
+    // Arguments: x, y, width, height — all in pixels.
+    this.cameras.main.setBounds(
+      0, 0,
+      map.widthInPixels,
+      map.heightInPixels
+    );
+
     // --- Input setup ---
     // Phaser's built-in helper for arrow key state tracking
     this.cursors = this.input.keyboard.createCursorKeys();
@@ -177,6 +193,7 @@ class MapScene extends Phaser.Scene {
 
     this.dialogueBoxBg = this.add.rectangle(width / 2, dialogueBoxY, dialogueBoxW, dialogueBoxH, 0x000000, 0.85)
       .setOrigin(0.5)
+      .setScrollFactor(0)   // stays fixed on screen regardless of camera position
       .setVisible(false);
 
     this.dialogueTextEl = domText.create(width / 2, dialogueBoxY - 14, '', {
@@ -209,6 +226,7 @@ class MapScene extends Phaser.Scene {
     // to be doing anything else while it's open.
     this.statusOverlayBg = this.add.rectangle(width / 2, height / 2, width, height, 0x101018, 0.95)
       .setOrigin(0.5)
+      .setScrollFactor(0)   // stays fixed on screen regardless of camera position
       .setVisible(false);
 
     this.statusTitleEl = domText.create(20, 16, 'STATUS', { fontSize: 14, color: '#ffff00', align: 'left' });
