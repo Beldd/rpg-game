@@ -39,7 +39,7 @@ const EditorData = {
         type: 'static',
         mapPosition: { tileX: 14, tileY: 9 },
         stats: {
-          hp: 20,
+          hp: 25,
           attackMin: 2,
           attackMax: 6,
           xpReward: 10,
