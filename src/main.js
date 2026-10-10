@@ -22,7 +22,7 @@ const config = {
     mode: Phaser.Scale.NONE,
     zoom: 2,                 // halved from 4 — keeps on-screen window size roughly the same (320*2=640 vs old 160*4=640)
   },
-  scene: [TitleScene, MapScene, BattleScene, GameOverScene, BootScene],        // TitleScene runs first now; MapScene starts after Enter is pressed
+  scene: [TitleScene, MapScene, DungeonScene, BattleScene, GameOverScene, BootScene],        // TitleScene runs first now; MapScene starts after Enter is pressed
 };
 
 // Creating this instance starts the game loop immediately.

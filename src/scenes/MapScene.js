@@ -114,12 +114,13 @@ class MapScene extends Phaser.Scene {
     this.map = map;
 
     // --- Player setup ---
-    // Start the player in the town plaza (clear floor, away from buildings).
-    // Tile coords -> pixel coords: multiply by TILE_SIZE.
-    // We add TILE_SIZE/2 to center the sprite within the tile rather
-    // than aligning its top-left corner to the tile's top-left corner.
-    const startTileX = 5;
-    const startTileY = 13;
+    // Default start position: town plaza (clear floor, away from buildings).
+    // Overridden by returnX/returnY if returning from DungeonScene, so
+    // the player reappears just outside the dungeon entrance door.
+    const sceneData = this.scene.settings.data || {};
+    const startTileX = sceneData.returnX ?? 5;
+    const startTileY = sceneData.returnY ?? 13;
+
     this.player = this.add.image(
       startTileX * this.TILE_SIZE + this.TILE_SIZE / 2,
       startTileY * this.TILE_SIZE + this.TILE_SIZE / 2,
@@ -281,6 +282,14 @@ class MapScene extends Phaser.Scene {
 
     const targetTileX = this.playerTileX + dx;
     const targetTileY = this.playerTileY + dy;
+
+    // Check dungeon entrance trigger — stepping onto the door tiles
+    // at the south face of the dungeon building transitions to DungeonScene.
+    const DUNGEON_DOOR = [{ x: 31, y: 20 }, { x: 32, y: 20 }, { x: 33, y: 20 }];
+    if (DUNGEON_DOOR.some(t => t.x === targetTileX && t.y === targetTileY)) {
+      this.enterDungeon();
+      return;
+    }
 
     // Check all static encounters BEFORE the wall/water check.
     // Walking into any encounter's tile triggers a battle for that
@@ -937,6 +946,20 @@ class MapScene extends Phaser.Scene {
    * Flee. Only "Fight" proceeds to actually fade into BattleScene;
    * "Flee" closes the dialogue and lets the player carry on walking.
    */
+  /**
+   * Fades out and launches DungeonScene. The player will reappear
+   * at the dungeon entrance vestibule on the dungeon map.
+   */
+  enterDungeon() {
+    this.encounterTriggered = true; // reuse this flag to block further input
+    this.cameras.main.fadeOut(400, 0, 0, 0);
+    domText.fadeOut();
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      domText.clearAll();
+      this.scene.start('DungeonScene');
+    });
+  }
+
   startEncounter() {
     this.encounterTriggered = true;
 

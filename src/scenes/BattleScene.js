@@ -15,7 +15,10 @@ class BattleScene extends Phaser.Scene {
   constructor() { super({ key: 'BattleScene' }); }
 
   init(data) {
-    this.encounterId = (data && data.encounterId) ? data.encounterId : 'slime_01';
+    this.encounterId  = (data && data.encounterId)  ? data.encounterId  : 'slime_01';
+    // Which scene to return to after the battle. Defaults to MapScene so
+    // existing code paths (and any direct calls without returnScene) still work.
+    this.returnScene  = (data && data.returnScene)  ? data.returnScene  : 'MapScene';
   }
 
   create() {
@@ -756,7 +759,7 @@ class BattleScene extends Phaser.Scene {
     domText.fadeOut();
     this.cameras.main.once('camerafadeoutcomplete', () => {
       domText.clearAll();
-      this.scene.start('MapScene');
+      this.scene.start(this.returnScene);
     });
   }
 }
