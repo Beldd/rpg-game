@@ -15,9 +15,12 @@ class MapScene extends Phaser.Scene {
     this.TILE_SIZE = 16;
 
     // Which tile values count as "blocked" (can't walk onto them).
-    // These are the same 1-based values used in map.json's data array:
-    // 1 = grass (walkable), 2 = wall (blocked), 3 = water (blocked)
-    this.BLOCKED_TILES = [2, 3];
+    // Kenney tiny_dungeon tile IDs (1-based):
+    //   1  = void/black border → blocked
+    //  27  = wall divider row  → blocked
+    //  41  = detailed floor    → walkable
+    //  50  = stone floor       → walkable
+    this.BLOCKED_TILES = [1, 27];
 
     // Tracks whether the player is currently mid-slide between tiles.
     // While true, new movement input is ignored — this is what makes
@@ -74,8 +77,8 @@ class MapScene extends Phaser.Scene {
 
   preload() {
     // Phaser's tilemap loader needs two things:
-    // 1. The raw tileset image (a strip of 16x16 tiles)
-    this.load.image('tiles', 'assets/tileset.png');
+    // 1. The Kenney tiny_dungeon packed tileset (192×176, 12×11, no spacing)
+    this.load.image('tiles', 'assets/kenny/tiny_dungeon/Tilemap/tilemap_packed.png');
 
     // 2. The map JSON describing which tile goes where
     //    'tilemapTiledJSON' tells Phaser to parse it as Tiled-format data
@@ -98,7 +101,7 @@ class MapScene extends Phaser.Scene {
 
     // Tell the map which loaded image corresponds to which tileset
     // name referenced inside the JSON (we called it "placeholder" there)
-    const tileset = map.addTilesetImage('placeholder', 'tiles');
+    const tileset = map.addTilesetImage('kenney_tiny_dungeon', 'tiles');
 
     // Create a visual layer from the "ground" layer defined in the JSON.
     // Store it on `this` so update() can later ask it "what tile is at
