@@ -229,9 +229,9 @@ class MapScene extends Phaser.Scene {
       .setScrollFactor(0)
       .setVisible(false);
 
-    // Vertical divider between sidebar (left 1/3) and content (right 2/3).
-    // x=107 = Math.floor(320/3). Drawn as a 1px-wide, full-height rectangle.
-    this.overlayDivider = this.add.rectangle(107, 0, 1, height, 0x334455)
+    // Vertical divider between sidebar (left 1/4, 0–79) and content (right 3/4, 81–319).
+    // x=80 = Math.floor(320/4). Drawn as a 1px-wide, full-height rectangle.
+    this.overlayDivider = this.add.rectangle(80, 0, 1, height, 0x334455)
       .setOrigin(0, 0)
       .setScrollFactor(0)
       .setVisible(false);
@@ -490,35 +490,36 @@ class MapScene extends Phaser.Scene {
    * focus has passed to the right panel and the sidebar is just decorative.
    */
   renderSidebar() {
+    // Layout constants — sidebar lives in cols 0–79 (1/4 of 320px canvas).
     const LABELS = ['Party', 'Equip', 'Items', 'Save'];
-    const startX = 8;
-    const startY = 28;
-    const rowH = 18;
+    const SX = 6;       // left edge for cursor / text
+    const startY = 30;
+    const rowH = 22;
     const sidebarFocused = (this.overlaySubState === null);
 
     this.overlayEls.push(
-      domText.create(startX, 14, 'MENU', { fontSize: 9, color: '#556677', align: 'left' })
+      domText.create(SX, 14, 'MENU', { fontSize: 8, color: '#334455', align: 'left' })
     );
 
     LABELS.forEach((label, i) => {
       const y = startY + i * rowH;
       const isActive = (this.menuIndex === i);
-      const color = isActive ? '#ffffff' : '#556677';
+      const color = isActive ? '#ffffff' : '#4a5a6a';
 
       if (sidebarFocused && isActive) {
         this.overlayEls.push(
-          domText.create(startX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' })
+          domText.create(SX, y, '▶', { fontSize: 10, color: '#ffff00', align: 'left' })
         );
       }
       this.overlayEls.push(
-        domText.create(startX + 12, y, label, { fontSize: 12, color, align: 'left' })
+        domText.create(SX + 12, y, label, { fontSize: 11, color, align: 'left' })
       );
     });
 
-    // Hint line at bottom of sidebar
-    const hint = sidebarFocused ? '↑↓ nav  Enter select' : 'Esc back';
+    // Hint at bottom of sidebar
+    const hint = sidebarFocused ? '↑↓ Enter' : '← Esc back';
     this.overlayEls.push(
-      domText.create(4, 118, hint, { fontSize: 8, color: '#334455', align: 'left' })
+      domText.create(SX, 128, hint, { fontSize: 7, color: '#2a3a4a', align: 'left' })
     );
   }
 
@@ -531,12 +532,13 @@ class MapScene extends Phaser.Scene {
    * in this version — listed for future party-order editing).
    */
   renderPartyPanel() {
-    const RX = 116; // right panel content left edge
-    const startY = 20;
-    const rowH = 36;
+    // Right panel: cols 88–316 (3/4 of canvas). RX = first usable column.
+    const RX = 88;
+    const startY = 22;
+    const rowH = 38;
 
     this.overlayEls.push(
-      domText.create(RX, 10, 'PARTY', { fontSize: 9, color: '#556677', align: 'left' })
+      domText.create(RX, 10, 'PARTY', { fontSize: 8, color: '#334455', align: 'left' })
     );
 
     GameState.party.forEach((member, i) => {
@@ -553,47 +555,51 @@ class MapScene extends Phaser.Scene {
       // Cursor
       if (isSelected) {
         this.overlayEls.push(
-          domText.create(RX - 10, y + 10, '>', { fontSize: 12, color: '#ffff00', align: 'left' })
+          domText.create(RX - 8, y + 12, '▶', { fontSize: 9, color: '#ffff00', align: 'left' })
         );
       }
 
       // Name
       const nameColor = member.hp <= 0 ? '#884444' : '#ffffff';
       this.overlayEls.push(
-        domText.create(RX + 26, y, member.name, { fontSize: 12, color: nameColor, align: 'left' })
+        domText.create(RX + 28, y + 2, member.name, { fontSize: 11, color: nameColor, align: 'left' })
       );
 
-      // HP bar text
+      // HP
       const hpColor = member.hp / member.maxHp > 0.4 ? '#33cc66' : '#cc4444';
       this.overlayEls.push(
-        domText.create(RX + 26, y + 13, `HP ${member.hp}/${member.maxHp}`, { fontSize: 10, color: hpColor, align: 'left' })
+        domText.create(RX + 28, y + 15, `HP ${member.hp}/${member.maxHp}`, { fontSize: 10, color: hpColor, align: 'left' })
       );
 
       // MP
       this.overlayEls.push(
-        domText.create(RX + 26, y + 24, `MP ${member.mp}/${member.maxMp}`, { fontSize: 10, color: '#5599ff', align: 'left' })
+        domText.create(RX + 28, y + 26, `MP ${member.mp}/${member.maxMp}`, { fontSize: 10, color: '#5599ff', align: 'left' })
       );
 
-      // Level / XP mini line
+      // Level / XP — pushed to right side of the wide panel
       this.overlayEls.push(
-        domText.create(RX + 120, y, `Lv ${member.level}`, { fontSize: 10, color: '#ffcc33', align: 'left' })
+        domText.create(RX + 140, y + 2, `Lv ${member.level}`, { fontSize: 10, color: '#ffcc33', align: 'left' })
       );
       this.overlayEls.push(
-        domText.create(RX + 120, y + 13, `XP ${member.xp}/${GameState.xpThresholdForLevel(member.level)}`, { fontSize: 9, color: '#887744', align: 'left' })
+        domText.create(RX + 140, y + 15, `XP ${member.xp}/${GameState.xpThresholdForLevel(member.level)}`, { fontSize: 9, color: '#776633', align: 'left' })
+      );
+
+      // Attack / Defense mini stats
+      this.overlayEls.push(
+        domText.create(RX + 140, y + 26, `Atk ${stats.attackMin}-${stats.attackMax}  Def ${stats.defense}`, { fontSize: 9, color: '#556677', align: 'left' })
       );
     });
 
     // Portrait placeholders (Phaser rectangles, not DOM — must be cleaned up separately).
     this._destroyPortraits();
     this._overlayPortraits = GameState.party.map((member, i) => {
-      const px = RX * domText.ZOOM; // not used for Phaser objects — keep in game coords
       const y = startY + i * rowH;
-      // 20×26 portrait box in game pixels
+      // 22×30 portrait box in game pixels, centered in the left gutter of the right panel
       const rect = this.add.rectangle(
-        RX + 10,
-        y + 13,
-        20, 26,
-        member.hp > 0 ? 0x224466 : 0x442222
+        RX + 11,
+        y + 15,
+        22, 30,
+        member.hp > 0 ? 0x1a3a55 : 0x3a1a1a
       ).setScrollFactor(0).setOrigin(0.5);
       return rect;
     });
@@ -621,7 +627,9 @@ class MapScene extends Phaser.Scene {
    * Enter on an occupied slot (EQUIP_SLOTS) → unequip, stay on slot list.
    */
   renderEquipPanel() {
-    const RX = 116;
+    // Right panel: cols 88–316. Two columns within it:
+    //   slot labels start at RX+14, equipped item name at RX+90, available items at RX+14.
+    const RX = 88;
     const SLOT_LABELS = [
       { key: 'primary',   label: 'Primary'   },
       { key: 'secondary', label: 'Secondary' },
@@ -632,63 +640,83 @@ class MapScene extends Phaser.Scene {
     const character = GameState.party[this.equipCharIndex];
     if (!character) return;
 
-    // Character selector header
+    // Panel header + character switcher
     this.overlayEls.push(
-      domText.create(RX, 10, 'EQUIP', { fontSize: 9, color: '#556677', align: 'left' })
+      domText.create(RX, 10, 'EQUIP', { fontSize: 8, color: '#334455', align: 'left' })
     );
     this.overlayEls.push(
-      domText.create(RX + 50, 10, `◄ ${character.name} ►`, { fontSize: 10, color: '#ffcc33', align: 'left' })
+      domText.create(RX + 48, 10, `◄ ${character.name} ►`, { fontSize: 10, color: '#ffcc33', align: 'left' })
+    );
+    this.overlayEls.push(
+      domText.create(RX + 160, 10, '←/→ switch', { fontSize: 8, color: '#2a3a4a', align: 'left' })
     );
 
-    // Equipped slots
-    const slotStartY = 26;
-    const slotRowH = 16;
+    // Slot list
+    const slotStartY = 28;
+    const slotRowH = 18;
 
     this.overlayEls.push(
-      domText.create(RX, slotStartY - 10, 'Equipped:', { fontSize: 9, color: '#556677', align: 'left' })
+      domText.create(RX, slotStartY - 10, 'Equipped:', { fontSize: 8, color: '#334455', align: 'left' })
     );
 
     SLOT_LABELS.forEach((slot, i) => {
       const y = slotStartY + i * slotRowH;
       const equipped = character.equipment[slot.key];
-      const isSelected = (this.overlaySubState === 'EQUIP_SLOTS' || this.overlaySubState === null) && this.equipSlotIndex === i;
+      const isSelected = this.overlaySubState === 'EQUIP_SLOTS' && this.equipSlotIndex === i;
 
-      if (isSelected && this.overlaySubState === 'EQUIP_SLOTS') {
-        this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
+      if (isSelected) {
+        this.overlayEls.push(domText.create(RX, y, '▶', { fontSize: 9, color: '#ffff00', align: 'left' }));
       }
-      this.overlayEls.push(domText.create(RX + 10, y, slot.label + ':', { fontSize: 10, color: '#aaaaaa', align: 'left' }));
-      this.overlayEls.push(domText.create(RX + 80, y, equipped ? equipped.name : '-', { fontSize: 10, color: equipped ? '#ffffff' : '#445566', align: 'left' }));
+      this.overlayEls.push(domText.create(RX + 12, y, `${slot.label}:`, { fontSize: 10, color: '#8899aa', align: 'left' }));
+      this.overlayEls.push(domText.create(RX + 90, y, equipped ? equipped.name : '—', { fontSize: 10, color: equipped ? '#ffffff' : '#334455', align: 'left' }));
+
+      // Show stat bonuses for equipped item inline
+      if (equipped && equipped.bonus) {
+        const bonuses = Array.isArray(equipped.bonus)
+          ? equipped.bonus.map(b => `+${b.amount} ${b.stat}`).join(' ')
+          : Object.entries(equipped.bonus).map(([k, v]) => `+${v} ${k}`).join(' ');
+        this.overlayEls.push(domText.create(RX + 170, y, bonuses, { fontSize: 8, color: '#556677', align: 'left' }));
+      }
     });
 
-    // Available items for the selected slot
-    const itemsStartY = slotStartY + SLOT_LABELS.length * slotRowH + 14;
-    const itemRowH = 13;
+    // Available items section (shown always, active/browsable only in EQUIP_ITEMS)
+    const itemsStartY = slotStartY + SLOT_LABELS.length * slotRowH + 16;
+    const itemRowH = 14;
+    const targetSlot = SLOT_LABELS[this.equipSlotIndex].key;
+    const available = GameState.inventory.filter(it => it.slot === targetSlot);
 
-    if (this.overlaySubState === 'EQUIP_ITEMS') {
-      const targetSlot = SLOT_LABELS[this.equipSlotIndex].key;
-      const available = GameState.inventory.filter(it => it.slot === targetSlot);
+    this.overlayEls.push(
+      domText.create(RX, itemsStartY - 10,
+        `Available (${SLOT_LABELS[this.equipSlotIndex].label}):`,
+        { fontSize: 8, color: this.overlaySubState === 'EQUIP_ITEMS' ? '#aabbcc' : '#334455', align: 'left' })
+    );
 
+    if (available.length === 0) {
       this.overlayEls.push(
-        domText.create(RX, itemsStartY - 10, `Available (${SLOT_LABELS[this.equipSlotIndex].label}):`, { fontSize: 9, color: '#556677', align: 'left' })
+        domText.create(RX + 12, itemsStartY, '(none in inventory)', { fontSize: 10, color: '#334455', align: 'left' })
       );
-
-      if (available.length === 0) {
-        this.overlayEls.push(
-          domText.create(RX + 10, itemsStartY, '(none)', { fontSize: 10, color: '#445566', align: 'left' })
-        );
-      } else {
-        available.forEach((item, i) => {
-          const y = itemsStartY + i * itemRowH;
-          const isSelected = this.equipItemIndex === i;
-          if (isSelected) {
-            this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
-          }
-          this.overlayEls.push(domText.create(RX + 10, y, item.name, { fontSize: 10, color: '#ffffff', align: 'left' }));
-        });
-      }
     } else {
+      available.forEach((item, i) => {
+        const y = itemsStartY + i * itemRowH;
+        const isSelected = this.overlaySubState === 'EQUIP_ITEMS' && this.equipItemIndex === i;
+        if (isSelected) {
+          this.overlayEls.push(domText.create(RX, y, '▶', { fontSize: 9, color: '#ffff00', align: 'left' }));
+        }
+        this.overlayEls.push(domText.create(RX + 12, y, item.name, { fontSize: 10, color: isSelected ? '#ffffff' : '#8899aa', align: 'left' }));
+
+        // Show bonus inline
+        if (item.bonus) {
+          const bonuses = Array.isArray(item.bonus)
+            ? item.bonus.map(b => `+${b.amount} ${b.stat}`).join(' ')
+            : Object.entries(item.bonus).map(([k, v]) => `+${v} ${k}`).join(' ');
+          this.overlayEls.push(domText.create(RX + 120, y, bonuses, { fontSize: 8, color: '#556677', align: 'left' }));
+        }
+      });
+    }
+
+    if (this.overlaySubState === 'EQUIP_SLOTS') {
       this.overlayEls.push(
-        domText.create(RX, itemsStartY, 'Enter to select slot', { fontSize: 9, color: '#334455', align: 'left' })
+        domText.create(RX, 128, 'Enter: equip/unequip slot', { fontSize: 7, color: '#2a3a4a', align: 'left' })
       );
     }
   }
@@ -731,7 +759,7 @@ class MapScene extends Phaser.Scene {
    *   ITEMS_TARGET — picking which party member to use the item on
    */
   renderItemsPanel() {
-    const RX = 116;
+    const RX = 88;
 
     this.overlayEls.push(
       domText.create(RX, 10, 'ITEMS', { fontSize: 9, color: '#556677', align: 'left' })
@@ -753,49 +781,63 @@ class MapScene extends Phaser.Scene {
     }
 
     const startY = 24;
-    const rowH = 14;
+    const rowH = 16;
 
     consumables.forEach((item, i) => {
       const y = startY + i * rowH;
       const isSelected = (this.overlaySubState === 'ITEMS_SELECT') && this.itemsSelectedIndex === i;
       if (isSelected) {
-        this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
+        this.overlayEls.push(domText.create(RX, y, '▶', { fontSize: 10, color: '#ffff00', align: 'left' }));
       }
       this.overlayEls.push(
-        domText.create(RX + 10, y, `${item.name} x${item.quantity}`, { fontSize: 10, color: '#ffffff', align: 'left' })
+        domText.create(RX + 12, y, item.name, { fontSize: 10, color: '#ffffff', align: 'left' })
+      );
+      this.overlayEls.push(
+        domText.create(RX + 140, y, `x${item.quantity}`, { fontSize: 10, color: '#aabbcc', align: 'left' })
       );
     });
 
     if (this.overlaySubState !== 'ITEMS_SELECT') {
       this.overlayEls.push(
-        domText.create(RX, 110, 'Enter to use', { fontSize: 9, color: '#334455', align: 'left' })
+        domText.create(RX, 116, 'Enter to use', { fontSize: 9, color: '#334455', align: 'left' })
+      );
+    } else {
+      this.overlayEls.push(
+        domText.create(RX, 116, '↑↓ select  Enter use', { fontSize: 9, color: '#445566', align: 'left' })
       );
     }
   }
 
   _renderItemsTargetView(RX) {
-    const startY = 26;
-    const rowH = 22;
+    const startY = 30;
+    const rowH = 26;
 
     this.overlayEls.push(
-      domText.create(RX, 20, 'Use on who?', { fontSize: 10, color: '#ffcc33', align: 'left' })
+      domText.create(RX, 14, 'Use on who?', { fontSize: 10, color: '#ffcc33', align: 'left' })
     );
 
     GameState.party.forEach((member, i) => {
-      const y = startY + i * rowH + 8;
+      const y = startY + i * rowH;
       const isSelected = this.itemsTargetIndex === i;
       const hpColor = member.hp / member.maxHp > 0.4 ? '#33cc66' : '#cc4444';
 
       if (isSelected) {
-        this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
+        this.overlayEls.push(domText.create(RX, y + 6, '▶', { fontSize: 10, color: '#ffff00', align: 'left' }));
       }
       this.overlayEls.push(
-        domText.create(RX + 10, y, member.name, { fontSize: 10, color: isSelected ? '#ffffff' : '#778899', align: 'left' })
+        domText.create(RX + 14, y, member.name, { fontSize: 11, color: isSelected ? '#ffffff' : '#778899', align: 'left' })
       );
       this.overlayEls.push(
-        domText.create(RX + 80, y, `HP ${member.hp}/${member.maxHp}`, { fontSize: 10, color: hpColor, align: 'left' })
+        domText.create(RX + 14, y + 14, `HP ${member.hp}/${member.maxHp}`, { fontSize: 10, color: hpColor, align: 'left' })
+      );
+      this.overlayEls.push(
+        domText.create(RX + 120, y + 14, `MP ${member.mp ?? 0}/${member.maxMp ?? 0}`, { fontSize: 10, color: '#5599ff', align: 'left' })
       );
     });
+
+    this.overlayEls.push(
+      domText.create(RX, 116, '↑↓ select  Enter confirm  Esc cancel', { fontSize: 8, color: '#445566', align: 'left' })
+    );
   }
 
   /** Applies a consumable item to the selected party member. */
@@ -840,9 +882,11 @@ class MapScene extends Phaser.Scene {
     this.clearOverlayContent();
     this.renderSidebar();
 
-    const RX = 116;
+    // Centre within the right panel (RX=88 to right edge 316, width=228)
+    const RX = 88;
+    const panelW = 316 - RX;
     this.overlayEls.push(
-      domText.create(RX + (320 - RX) / 2 - RX / 2, 64, msg, { fontSize: 12, color: '#ffcc33' })
+      domText.create(RX + panelW / 2, 72, msg, { fontSize: 11, color: '#ffcc33', align: 'center' })
     );
 
     this.time.delayedCall(1200, () => {
@@ -857,20 +901,23 @@ class MapScene extends Phaser.Scene {
    * Up/Down picks a slot; Enter performs the action.
    */
   renderSaveLoadPanel() {
-    const RX = 116;
+    const RX = 88;
 
+    // Header row: mode label left, toggle hint right
     this.overlayEls.push(
       domText.create(RX, 10, 'SAVE / LOAD', { fontSize: 9, color: '#556677', align: 'left' })
     );
+
+    const modeColor = this.saveLoadMode === 'SAVE' ? '#ffcc33' : '#33aaff';
     this.overlayEls.push(
-      domText.create(RX, 24, `Mode: ${this.saveLoadMode}`, { fontSize: 10, color: '#ffcc33', align: 'left' })
+      domText.create(RX, 22, this.saveLoadMode, { fontSize: 12, color: modeColor, align: 'left' })
     );
     this.overlayEls.push(
-      domText.create(RX + 100, 24, '[Space] toggle', { fontSize: 9, color: '#445566', align: 'left' })
+      domText.create(RX + 60, 24, '[Space] toggle', { fontSize: 9, color: '#445566', align: 'left' })
     );
 
     const slotStartY = 42;
-    const slotRowH = 20;
+    const slotRowH = 22;
 
     for (let i = 0; i < SaveSystem.NUM_SLOTS; i++) {
       const slotNumber = i + 1;
@@ -880,18 +927,35 @@ class MapScene extends Phaser.Scene {
 
       const snapshot = SaveSystem.readSlot(slotNumber);
       let statusText = '(empty)';
+      let timeText = '';
       if (snapshot) {
         const secs = Math.floor((Date.now() - snapshot.savedAt) / 1000);
-        statusText = secs < 60 ? `${secs}s ago` : `${Math.floor(secs / 60)}m ago`;
+        timeText = secs < 60 ? `${secs}s ago` : `${Math.floor(secs / 60)}m ago`;
+        statusText = snapshot.playerName ? snapshot.playerName : 'Save data';
       }
 
-      const label = `Slot ${slotNumber}${isAuto ? ' (auto)' : ''}: ${statusText}`;
+      const slotLabel = `Slot ${slotNumber}${isAuto ? ' ★' : ''}`;
+      const rowColor = isSelected ? '#ffffff' : '#778899';
 
       if (isSelected) {
-        this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
+        this.overlayEls.push(domText.create(RX, y + 4, '▶', { fontSize: 10, color: '#ffff00', align: 'left' }));
       }
       this.overlayEls.push(
-        domText.create(RX + 10, y, label, { fontSize: 10, color: '#ffffff', align: 'left' })
+        domText.create(RX + 14, y, slotLabel, { fontSize: 10, color: rowColor, align: 'left' })
+      );
+      this.overlayEls.push(
+        domText.create(RX + 14, y + 12, statusText, { fontSize: 9, color: snapshot ? '#aaccaa' : '#445566', align: 'left' })
+      );
+      if (timeText) {
+        this.overlayEls.push(
+          domText.create(RX + 160, y + 12, timeText, { fontSize: 9, color: '#556677', align: 'left' })
+        );
+      }
+    }
+
+    if (this.overlaySubState === 'SAVELOAD') {
+      this.overlayEls.push(
+        domText.create(RX, 116, '↑↓ select  Enter confirm', { fontSize: 9, color: '#445566', align: 'left' })
       );
     }
   }
@@ -928,9 +992,8 @@ class MapScene extends Phaser.Scene {
     // Show "Loaded!" message briefly, then fade → close overlay → fade back.
     this.clearOverlayContent();
     this.renderSidebar();
-    const RX = 116;
     this.overlayEls.push(
-      domText.create(RX + 60, 64, `Loaded Slot ${slotNumber}!`, { fontSize: 14, color: '#33cc66' })
+      domText.create(202, 72, `Loaded Slot ${slotNumber}!`, { fontSize: 13, color: '#33cc66', align: 'center' })
     );
 
     this.time.delayedCall(900, () => {
