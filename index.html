@@ -23,6 +23,18 @@
       height: 480px;  /* 240 game px * 2 zoom = 480 CSS px */
     }
 
+    /* Phaser injects the <canvas> here. Needs position + z-index so it
+       competes in the same stacking context as the text overlay divs.
+       z-index: 0 puts the canvas below both #text-overlay (1) and
+       #menu-overlay (2). Without this, static-flow elements can paint
+       over absolutely-positioned ones regardless of z-index. */
+    #game-container {
+      position: absolute;
+      top: 0;
+      left: 0;
+      z-index: 0;
+    }
+
     /* This div sits exactly on top of the Phaser canvas. Individual
        text elements get added/removed from inside it by our scenes.
        pointer-events: none so it never blocks clicks/input meant for
