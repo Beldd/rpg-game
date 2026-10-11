@@ -445,6 +445,9 @@ class MapScene extends Phaser.Scene {
     this.overlayDivider.setVisible(true);
     try {
       this.renderOverlay();
+      console.log('[Overlay] opened. overlayEls count:', this.overlayEls.length,
+        ' | #text-overlay children:', document.getElementById('text-overlay')?.children.length,
+        ' | #menu-overlay children:', document.getElementById('menu-overlay')?.children.length);
     } catch (e) {
       console.error('[Overlay] renderOverlay() threw on open:', e);
       // Close cleanly so the update loop doesn't get stuck
