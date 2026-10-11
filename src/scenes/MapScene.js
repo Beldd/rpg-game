@@ -443,17 +443,17 @@ class MapScene extends Phaser.Scene {
     this.overlaySubState = null;
     this.overlayBg.setVisible(true);
     this.overlayDivider.setVisible(true);
+    // Hide world-layer DOM text (HUD, NPC labels, portraits) so it doesn't
+    // bleed through the Phaser overlay background rectangles.
+    document.getElementById('text-overlay').style.visibility = 'hidden';
     try {
       this.renderOverlay();
-      console.log('[Overlay] opened. overlayEls count:', this.overlayEls.length,
-        ' | #text-overlay children:', document.getElementById('text-overlay')?.children.length,
-        ' | #menu-overlay children:', document.getElementById('menu-overlay')?.children.length);
     } catch (e) {
       console.error('[Overlay] renderOverlay() threw on open:', e);
-      // Close cleanly so the update loop doesn't get stuck
       this.overlayOpen = false;
       this.overlayBg.setVisible(false);
       this.overlayDivider.setVisible(false);
+      document.getElementById('text-overlay').style.visibility = 'visible';
     }
   }
 
@@ -464,6 +464,8 @@ class MapScene extends Phaser.Scene {
     this.overlayDivider.setVisible(false);
     this._destroyPortraits();
     this.clearOverlayContent();
+    // Restore world-layer DOM text now that the overlay is closed.
+    document.getElementById('text-overlay').style.visibility = 'visible';
   }
 
   /** Removes all dynamic text elements created by the current render pass. */
@@ -596,7 +598,7 @@ class MapScene extends Phaser.Scene {
 
       // Attack / Defense mini stats
       this.overlayEls.push(
-        domText.menu(RX + 140, y + 26, `Atk ${stats.attackMin}-${stats.attackMax}  Def ${stats.defense}`, { fontSize: 9, color: '#556677', align: 'left' })
+        domText.menu(RX + 140, y + 26, `Atk ${stats.attackMin}-${stats.attackMax}  Def ${stats.defense}`, { fontSize: 9, color: '#99aabb', align: 'left' })
       );
     });
 
@@ -666,7 +668,7 @@ class MapScene extends Phaser.Scene {
     const slotRowH = 18;
 
     this.overlayEls.push(
-      domText.menu(RX, slotStartY - 10, 'Equipped:', { fontSize: 8, color: '#334455', align: 'left' })
+      domText.menu(RX, slotStartY - 10, 'Equipped:', { fontSize: 8, color: '#8899aa', align: 'left' })
     );
 
     SLOT_LABELS.forEach((slot, i) => {
@@ -677,15 +679,15 @@ class MapScene extends Phaser.Scene {
       if (isSelected) {
         this.overlayEls.push(domText.menu(RX, y, '▶', { fontSize: 9, color: '#ffff00', align: 'left' }));
       }
-      this.overlayEls.push(domText.menu(RX + 12, y, `${slot.label}:`, { fontSize: 10, color: '#8899aa', align: 'left' }));
-      this.overlayEls.push(domText.menu(RX + 90, y, equipped ? equipped.name : '—', { fontSize: 10, color: equipped ? '#ffffff' : '#334455', align: 'left' }));
+      this.overlayEls.push(domText.menu(RX + 12, y, `${slot.label}:`, { fontSize: 10, color: '#aabbcc', align: 'left' }));
+      this.overlayEls.push(domText.menu(RX + 90, y, equipped ? equipped.name : '—', { fontSize: 10, color: equipped ? '#ffffff' : '#667788', align: 'left' }));
 
       // Show stat bonuses for equipped item inline
       if (equipped && equipped.bonus) {
         const bonuses = Array.isArray(equipped.bonus)
           ? equipped.bonus.map(b => `+${b.amount} ${b.stat}`).join(' ')
           : Object.entries(equipped.bonus).map(([k, v]) => `+${v} ${k}`).join(' ');
-        this.overlayEls.push(domText.menu(RX + 170, y, bonuses, { fontSize: 8, color: '#556677', align: 'left' }));
+        this.overlayEls.push(domText.menu(RX + 170, y, bonuses, { fontSize: 8, color: '#88aacc', align: 'left' }));
       }
     });
 
@@ -698,12 +700,12 @@ class MapScene extends Phaser.Scene {
     this.overlayEls.push(
       domText.menu(RX, itemsStartY - 10,
         `Available (${SLOT_LABELS[this.equipSlotIndex].label}):`,
-        { fontSize: 8, color: this.overlaySubState === 'EQUIP_ITEMS' ? '#aabbcc' : '#334455', align: 'left' })
+        { fontSize: 8, color: this.overlaySubState === 'EQUIP_ITEMS' ? '#ffffff' : '#8899aa', align: 'left' })
     );
 
     if (available.length === 0) {
       this.overlayEls.push(
-        domText.menu(RX + 12, itemsStartY, '(none in inventory)', { fontSize: 10, color: '#334455', align: 'left' })
+        domText.menu(RX + 12, itemsStartY, '(none in inventory)', { fontSize: 10, color: '#667788', align: 'left' })
       );
     } else {
       available.forEach((item, i) => {
@@ -712,21 +714,21 @@ class MapScene extends Phaser.Scene {
         if (isSelected) {
           this.overlayEls.push(domText.menu(RX, y, '▶', { fontSize: 9, color: '#ffff00', align: 'left' }));
         }
-        this.overlayEls.push(domText.menu(RX + 12, y, item.name, { fontSize: 10, color: isSelected ? '#ffffff' : '#8899aa', align: 'left' }));
+        this.overlayEls.push(domText.menu(RX + 12, y, item.name, { fontSize: 10, color: isSelected ? '#ffffff' : '#aabbcc', align: 'left' }));
 
         // Show bonus inline
         if (item.bonus) {
           const bonuses = Array.isArray(item.bonus)
             ? item.bonus.map(b => `+${b.amount} ${b.stat}`).join(' ')
             : Object.entries(item.bonus).map(([k, v]) => `+${v} ${k}`).join(' ');
-          this.overlayEls.push(domText.menu(RX + 120, y, bonuses, { fontSize: 8, color: '#556677', align: 'left' }));
+          this.overlayEls.push(domText.menu(RX + 120, y, bonuses, { fontSize: 8, color: '#88aacc', align: 'left' }));
         }
       });
     }
 
     if (this.overlaySubState === 'EQUIP_SLOTS') {
       this.overlayEls.push(
-        domText.menu(RX, 128, 'Enter: equip/unequip slot', { fontSize: 7, color: '#2a3a4a', align: 'left' })
+        domText.menu(RX, 128, 'Enter: equip/unequip slot', { fontSize: 7, color: '#7788aa', align: 'left' })
       );
     }
   }
@@ -772,7 +774,7 @@ class MapScene extends Phaser.Scene {
     const RX = 88;
 
     this.overlayEls.push(
-      domText.menu(RX, 10, 'ITEMS', { fontSize: 9, color: '#556677', align: 'left' })
+      domText.menu(RX, 10, 'ITEMS', { fontSize: 9, color: '#99aabb', align: 'left' })
     );
 
     if (this.overlaySubState === 'ITEMS_TARGET') {
@@ -809,11 +811,11 @@ class MapScene extends Phaser.Scene {
 
     if (this.overlaySubState !== 'ITEMS_SELECT') {
       this.overlayEls.push(
-        domText.menu(RX, 116, 'Enter to use', { fontSize: 9, color: '#334455', align: 'left' })
+        domText.menu(RX, 116, 'Enter to use', { fontSize: 9, color: '#7788aa', align: 'left' })
       );
     } else {
       this.overlayEls.push(
-        domText.menu(RX, 116, '↑↓ select  Enter use', { fontSize: 9, color: '#445566', align: 'left' })
+        domText.menu(RX, 116, '↑↓ select  Enter use', { fontSize: 9, color: '#7788aa', align: 'left' })
       );
     }
   }
