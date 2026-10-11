@@ -57,6 +57,19 @@ class DungeonScene extends Phaser.Scene {
   }
 
   create() {
+    // Reset all per-visit state here (not in the constructor) because
+    // Phaser reuses the scene instance across scene.start() calls —
+    // the constructor only runs once, so any state left dirty from a
+    // previous visit (e.g. encounterTriggered=true after a battle)
+    // would carry over and freeze the player on re-entry.
+    this.isMoving = false;
+    this.encounterTriggered = false;
+    this.transitionTriggered = false;
+    this.dialogueState = null;
+    this.dialogueOptions = [];
+    this.dialogueSelectedIndex = 0;
+    this.activeEncounterId = null;
+
     domText.fadeIn();
     this.cameras.main.setBackgroundColor('#000000');
 
