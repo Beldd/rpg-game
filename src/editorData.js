@@ -38,6 +38,7 @@ const EditorData = {
         name: 'Slime',
         type: 'static',
         mapPosition: { tileX: 32, tileY: 10 },
+        dungeonPosition: { tileX: 14, tileY: 10 },
         stats: {
           hp: 20,
           attackMin: 2,
@@ -182,6 +183,11 @@ const EditorData = {
     data.encounters.forEach(enc => {
       if (enc.type === undefined) enc.type = 'static';
       if (enc.mapPosition === undefined) enc.mapPosition = { tileX: 14, tileY: 9 };
+      if (enc.dungeonPosition === undefined) {
+        // Default dungeon position for encounters that predate this field.
+        const defaultEnc2 = this.defaults.encounters.find(d => d.id === enc.id);
+        enc.dungeonPosition = defaultEnc2 ? defaultEnc2.dungeonPosition : { tileX: 14, tileY: 10 };
+      }
       if (!enc.abilities || enc.abilities.length === 0) {
         enc.abilities = JSON.parse(JSON.stringify(defaultEnc.abilities));
       }

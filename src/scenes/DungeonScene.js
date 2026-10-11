@@ -86,16 +86,20 @@ class DungeonScene extends Phaser.Scene {
     // Only load encounters whose mapPosition falls inside the dungeon
     // map bounds — the editor stores a single position per encounter,
     // so the same slime definition drives a dungeon encounter here.
-    this.staticEncounters = EditorData.getStaticEncounters().map(enc => ({
-      id: enc.id,
-      tileX: enc.mapPosition.tileX,
-      tileY: enc.mapPosition.tileY,
-      sprite: this.add.image(
-        enc.mapPosition.tileX * this.TILE_SIZE + this.TILE_SIZE / 2,
-        enc.mapPosition.tileY * this.TILE_SIZE + this.TILE_SIZE / 2,
-        'enemy'
-      ),
-    }));
+    this.staticEncounters = EditorData.getStaticEncounters().map(enc => {
+      // Prefer dungeonPosition if defined, fall back to mapPosition.
+      const pos = enc.dungeonPosition || enc.mapPosition;
+      return {
+        id: enc.id,
+        tileX: pos.tileX,
+        tileY: pos.tileY,
+        sprite: this.add.image(
+          pos.tileX * this.TILE_SIZE + this.TILE_SIZE / 2,
+          pos.tileY * this.TILE_SIZE + this.TILE_SIZE / 2,
+          'enemy'
+        ),
+      };
+    });
 
     // --- Dialogue box (for encounter challenge) ---
     const { width, height } = this.cameras.main;
@@ -313,9 +317,9 @@ class DungeonScene extends Phaser.Scene {
       return;
     }
 
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.left))  this.tryMove(-1,  0);
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) this.tryMove( 1,  0);
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.up))    this.tryMove( 0, -1);
-    if (Phaser.Input.Keyboard.JustDown(this.cursors.down))  this.tryMove( 0,  1);
+    if (this.cursors.left.isDown)  this.tryMove(-1,  0);
+    else if (this.cursors.right.isDown) this.tryMove( 1,  0);
+    else if (this.cursors.up.isDown)    this.tryMove( 0, -1);
+    else if (this.cursors.down.isDown)  this.tryMove( 0,  1);
   }
 }
