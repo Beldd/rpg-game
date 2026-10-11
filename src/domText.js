@@ -63,8 +63,20 @@ const domText = {
     const align = options.align || 'center';
     el.style.transform = align === 'left' ? 'translate(0, -50%)' : 'translate(-50%, -50%)';
 
-    document.getElementById('text-overlay').appendChild(el);
+    // layer: 'menu' → #menu-overlay (sits above world text); omit for world text.
+    // Falls back to #text-overlay if #menu-overlay isn't in the DOM yet.
+    const containerId = options.layer === 'menu' ? 'menu-overlay' : 'text-overlay';
+    const container = document.getElementById(containerId) || document.getElementById('text-overlay');
+    container.appendChild(el);
     return el;
+  },
+
+  /**
+   * Shorthand for create() with layer:'menu'. Use this for all overlay/menu
+   * UI text so it renders in #menu-overlay (above world text in #text-overlay).
+   */
+  menu(gameX, gameY, text, options = {}) {
+    return this.create(gameX, gameY, text, { ...options, layer: 'menu' });
   },
 
   /** Updates the text content of an element created via domText.create(). */
