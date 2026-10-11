@@ -38,41 +38,44 @@ class MapScene extends Phaser.Scene {
     this.dialogueOptions = [];
     this.dialogueSelectedIndex = 0;
 
-    // Status/Inventory overlay state. statusOverlayOpen gates input
-    // the same way dialogueState does — while open, movement and
-    // dialogue input are both suppressed (see update()). activeView
-    // tracks which of the two pages is currently shown.
-    this.statusOverlayOpen = false;
-    this.activeView = 'STATUS'; // 'STATUS' | 'INVENTORY' | 'SAVELOAD'
+    // ── Overlay state ────────────────────────────────────────────────
+    // The overlay is a full-screen panel split into a left sidebar menu
+    // (cols 0–106) and a right content panel (cols 108–319). The sidebar
+    // has four entries: Party (0), Equip (1), Items (2), Save (3).
+    //
+    // overlayOpen     — whether the panel is visible
+    // menuIndex       — which sidebar entry has focus (0–3)
+    // overlaySubState — what the right panel is currently doing:
+    //   null            → sidebar has focus; Up/Down moves menuIndex
+    //   'PARTY'         → browsing party list; Up/Down selects member
+    //   'EQUIP_SLOTS'   → cursor on an equipment slot for equipCharIndex
+    //   'EQUIP_ITEMS'   → cursor in the item list for that slot
+    //   'ITEMS_SELECT'  → cursor on a consumable in the items list
+    //   'ITEMS_TARGET'  → picking which party member to use item on
+    //   'SAVELOAD'      → cursor on a save/load slot
+    //
+    // All sub-state indices reset on menu navigation so stale positions
+    // never carry across different menu entries.
+    this.overlayOpen = false;
+    this.menuIndex = 0;        // 0=Party 1=Equip 2=Items 3=Save
+    this.overlaySubState = null;
 
-    // Which party member (index into GameState.party) the overlay is
-    // currently showing/equipping for. Q/E cycles this in both views.
-    this.activeCharacterIndex = 0;
+    // Party sub-state
+    this.partySelectedIndex = 0;
 
-    // Within Inventory view only: which of the two sections currently
-    // has navigation focus, and which row is selected within each.
-    // Kept as two separate indices (not one shared index) so moving
-    // into Items and back to Equipped doesn't lose your place in
-    // either list.
-    this.inventoryFocusedSection = 'EQUIPPED'; // 'EQUIPPED' | 'ITEMS'
-    this.equippedSelectedIndex = 0;
+    // Equip sub-state
+    this.equipCharIndex = 0;
+    this.equipSlotIndex = 0;
+    this.equipItemIndex = 0;
+
+    // Items sub-state
     this.itemsSelectedIndex = 0;
+    this.itemsTargetIndex = 0;
 
-    // Save/Load view state. saveLoadMode is toggled with Space;
-    // saveLoadSelectedIndex picks among the 3 slots (0-indexed here,
-    // converted to 1-indexed slot numbers when calling SaveSystem).
-    // pendingLoadConfirm holds the slot number awaited confirmation
-    // for for an in-progress Load (via the reused dialogue-choice
-    // system) — null when no confirmation is pending.
-    this.saveLoadMode = 'SAVE'; // 'SAVE' | 'LOAD'
+    // Save/Load sub-state
+    this.saveLoadMode = 'SAVE';
     this.saveLoadSelectedIndex = 0;
     this.pendingLoadConfirm = null;
-
-    // Consumable use state: set when a consumable with an effect is
-    // selected from the Items list, waiting for target selection.
-    // null when not in target-selection mode.
-    // Shape: { item, selectedTargetIndex }
-    this.consumableTargetState = null;
   }
 
   preload() {
@@ -219,36 +222,31 @@ class MapScene extends Phaser.Scene {
     // Enter is reused for both "dismiss message" and "confirm choice."
     this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
 
-    // --- Status/Inventory overlay UI ---
-    // A larger full-screen-ish panel, built once and hidden by
-    // default. Unlike the dialogue box (which is small, anchored to
-    // the bottom, and meant to coexist with seeing the map), this
-    // overlay covers most of the screen since the player isn't meant
-    // to be doing anything else while it's open.
-    this.statusOverlayBg = this.add.rectangle(width / 2, height / 2, width, height, 0x101018, 0.95)
+    // ── Overlay UI ───────────────────────────────────────────────────
+    // Full-screen background covers the map while the overlay is open.
+    this.overlayBg = this.add.rectangle(width / 2, height / 2, width, height, 0x101018, 0.95)
       .setOrigin(0.5)
-      .setScrollFactor(0)   // stays fixed on screen regardless of camera position
+      .setScrollFactor(0)
       .setVisible(false);
 
-    this.statusTitleEl = domText.create(20, 16, 'STATUS', { fontSize: 14, color: '#ffff00', align: 'left' });
-    this.statusTitleEl.style.display = 'none';
+    // Vertical divider between sidebar (left 1/3) and content (right 2/3).
+    // x=107 = Math.floor(320/3). Drawn as a 1px-wide, full-height rectangle.
+    this.overlayDivider = this.add.rectangle(107, 0, 1, height, 0x334455)
+      .setOrigin(0, 0)
+      .setScrollFactor(0)
+      .setVisible(false);
 
-    this.statusHintEl = domText.create(20, 32, 'Q/E:char  TAB:view  I/ESC:close', { fontSize: 8, color: '#888888', align: 'left' });
-    this.statusHintEl.style.display = 'none';
+    // All dynamic text elements (sidebar labels, content lines) are
+    // created fresh each time the overlay opens or its state changes,
+    // then removed as a group via clearOverlayContent(). This keeps
+    // the render functions stateless and avoids hidden stale elements.
+    this.overlayEls = [];
 
-    // Content elements (character stat lines, inventory item lines)
-    // are rebuilt every time the overlay opens or switches views,
-    // same pattern as the battle/dialogue menus — see
-    // renderStatusView() and renderInventoryView() below.
-    this.statusContentEls = [];
-
-    // I opens/closes the overlay; Tab switches views while it's open;
-    // Q/E switches the active character in either view.
-    this.statusKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
-    this.tabKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.TAB);
-    this.escKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
-    this.qKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Q);
-    this.eKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.E);
+    // P opens/closes the overlay. I kept as an alias so muscle memory
+    // from the old layout still works. ESC always closes or backs out.
+    this.overlayKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    this.overlayKeyI = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
+    this.escKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
     console.log(`Map loaded: ${map.width}x${map.height} tiles`);
@@ -349,16 +347,12 @@ class MapScene extends Phaser.Scene {
     this.dialogueOptions = options;
     this.dialogueSelectedIndex = 0;
 
-    // If the status overlay is open behind this dialogue (e.g. a Load
-    // confirmation triggered from Save/Load view), its text content
-    // is DOM-rendered and sits in a layer ABOVE the canvas-based
-    // dialogue box — no amount of dialogue background opacity can
-    // cover DOM text, since opacity only affects the canvas layer
-    // beneath it. Clearing the overlay's text (but leaving its dark
-    // background visible) avoids both problems: no see-through text,
-    // and no jarring flash back to the map while the dialogue is up.
-    if (this.statusOverlayOpen) {
-      this.clearStatusContent();
+    // If the overlay is open behind this dialogue (e.g. a Load
+    // confirmation triggered from Save/Load view), clear its text so
+    // DOM elements don't show through the dialogue box — the overlay
+    // background stays visible to avoid a jarring flash to the map.
+    if (this.overlayOpen) {
+      this.clearOverlayContent();
     }
 
     this.dialogueBoxBg.setVisible(true);
@@ -423,11 +417,9 @@ class MapScene extends Phaser.Scene {
     }
 
     // Restore the overlay's content if it's still open behind this
-    // dialogue (see openChoiceDialogue) — otherwise the player would
-    // be left looking at a blank overlay (background visible, no
-    // text) until some unrelated input happened to trigger a re-render.
-    if (this.statusOverlayOpen) {
-      this.renderActiveView();
+    // dialogue (see openChoiceDialogue).
+    if (this.overlayOpen) {
+      this.renderOverlay();
     }
   }
 
@@ -444,469 +436,386 @@ class MapScene extends Phaser.Scene {
     return partySize > 1 ? 'interlopers' : 'interloper';
   }
 
-  /**
-   * Opens the status/inventory overlay, showing whichever view was
-   * last active (defaults to STATUS the very first time). Movement
-   * and dialogue input are both blocked while this is open — see the
-   * early-return check at the top of update().
-   */
-  openStatusOverlay() {
-    this.statusOverlayOpen = true;
-    this.statusOverlayBg.setVisible(true);
-    this.statusTitleEl.style.display = 'block';
-    this.statusHintEl.style.display = 'block';
-    this.renderActiveView();
+  // ─── Overlay open / close / clear ───────────────────────────────────────
+
+  openOverlay() {
+    this.overlayOpen = true;
+    this.overlaySubState = null;
+    this.overlayBg.setVisible(true);
+    this.overlayDivider.setVisible(true);
+    this.renderOverlay();
   }
 
-  closeStatusOverlay() {
-    this.statusOverlayOpen = false;
-    this.statusOverlayBg.setVisible(false);
-    this.statusTitleEl.style.display = 'none';
-    this.statusHintEl.style.display = 'none';
-    this.clearStatusContent();
-    this.consumableTargetState = null; // clear any pending target selection
+  closeOverlay() {
+    this.overlayOpen = false;
+    this.overlaySubState = null;
+    this.overlayBg.setVisible(false);
+    this.overlayDivider.setVisible(false);
+    this._destroyPortraits();
+    this.clearOverlayContent();
   }
 
-  /** Removes whatever content elements the current view created, without touching the title/hint/background. */
-  clearStatusContent() {
-    this.statusContentEls.forEach((el) => domText.remove(el));
-    this.statusContentEls = [];
+  /** Removes all dynamic text elements created by the current render pass. */
+  clearOverlayContent() {
+    this.overlayEls.forEach(el => domText.remove(el));
+    this.overlayEls = [];
   }
 
-  /** Cycles to the next view (Status -> Inventory -> Save/Load -> Status) and re-renders. Called when Tab is pressed while the overlay is open. */
-  switchView() {
-    const order = ['STATUS', 'INVENTORY', 'SAVELOAD'];
-    const currentIndex = order.indexOf(this.activeView);
-    this.activeView = order[(currentIndex + 1) % order.length];
-
-    // Reset Inventory navigation to a known state each time we enter
-    // it, rather than carrying over a section focus that might no
-    // longer make sense (e.g. if Items was empty before but isn't now).
-    this.inventoryFocusedSection = 'EQUIPPED';
-    this.equippedSelectedIndex = 0;
-    this.itemsSelectedIndex = 0;
-
-    // Save/Load view always starts in Save mode with slot 1 selected,
-    // regardless of what was selected last time — predictable default
-    // rather than carrying over potentially-stale state.
-    this.saveLoadMode = 'SAVE';
-    this.saveLoadSelectedIndex = 0;
-
-    this.renderActiveView();
-  }
-
-  /** Switches the active character (Q/E) and re-renders whichever view is currently showing. */
-  switchCharacter(delta) {
-    const count = GameState.party.length;
-    this.activeCharacterIndex = (this.activeCharacterIndex + delta + count) % count;
-    // Same reset rationale as switchView() — a different character's
-    // equipment/items are a different list, so stale selection
-    // indices from the previous character don't carry meaning.
-    this.equippedSelectedIndex = 0;
-    this.itemsSelectedIndex = 0;
-    this.renderActiveView();
-  }
-
-  renderActiveView() {
-    this.clearStatusContent();
-    const character = GameState.party[this.activeCharacterIndex];
-
-    let title;
-    if (this.activeView === 'STATUS') {
-      title = `STATUS (${character.name})`;
-    } else if (this.activeView === 'INVENTORY') {
-      title = `INVENTORY (${character.name})`;
-    } else {
-      title = 'SAVE / LOAD'; // not per-character, no name suffix
-    }
-    domText.setText(this.statusTitleEl, title);
-
-    if (this.activeView === 'STATUS') {
-      this.renderStatusView(character);
-    } else if (this.activeView === 'INVENTORY') {
-      this.renderInventoryView(character);
-    } else {
-      this.renderSaveLoadView();
-    }
-  }
+  // ─── Top-level render dispatcher ────────────────────────────────────────
 
   /**
-   * Shows the active character's core stats. Always renders just one
-   * character now (the one selected via Q/E) rather than the whole
-   * party at once — this keeps Status and Inventory views consistent
-   * in what "active character" means across both.
+   * Clears all overlay DOM elements and redraws the sidebar + right panel
+   * from scratch. Keeps render functions stateless — every open/navigate
+   * call funnels here and the state variables on `this` are the source
+   * of truth for what gets drawn.
    */
-  renderStatusView(character) {
-    const startY = 50;
-    const contentStartY = startY + 20;
-    const stats = GameState.getEffectiveStats(character);
-    const xpNeeded = GameState.xpThresholdForLevel(character.level);
+  renderOverlay() {
+    this.clearOverlayContent();
+    this.renderSidebar();
 
-    this.statusContentEls.push(
-      domText.create(20, startY, `Level: ${character.level}  (XP: ${character.xp}/${xpNeeded})`, { fontSize: 12, color: '#ffcc33', align: 'left' })
-    );
-    this.statusContentEls.push(
-      domText.create(20, contentStartY, `HP: ${character.hp}/${character.maxHp}`, { fontSize: 12, color: '#33cc66', align: 'left' })
-    );
-    this.statusContentEls.push(
-      domText.create(20, contentStartY + 20, `MP: ${character.mp}/${character.maxMp}`, { fontSize: 12, color: '#3366cc', align: 'left' })
-    );
-    this.statusContentEls.push(
-      domText.create(20, contentStartY + 40, `Attack: ${stats.attackMin}-${stats.attackMax}`, { fontSize: 12, color: '#cccccc', align: 'left' })
-    );
-    this.statusContentEls.push(
-      domText.create(160, contentStartY + 40, `Defense: ${stats.defense}`, { fontSize: 12, color: '#cccccc', align: 'left' })
-    );
-
-    // Equipped items, shown for reference only — this view has no
-    // cursor/selection of its own. Editing equipment is still done
-    // exclusively from Inventory view; this just lets the player see
-    // current loadout without switching views.
-    const equipStartY = contentStartY + 70;
-    const slotLabels = [
-      { key: 'primary', label: 'Primary' },
-      { key: 'secondary', label: 'Secondary' },
-      { key: 'body', label: 'Body' },
-      { key: 'head', label: 'Head' },
-    ];
-
-    this.statusContentEls.push(
-      domText.create(20, equipStartY - 14, 'Equipped:', { fontSize: 10, color: '#888888', align: 'left' })
-    );
-
-    slotLabels.forEach((slot, i) => {
-      const y = equipStartY + i * 16;
-      const item = character.equipment[slot.key];
-      this.statusContentEls.push(
-        domText.create(32, y, `${slot.label}:`, { fontSize: 12, color: '#aaaaaa', align: 'left' })
-      );
-      this.statusContentEls.push(
-        domText.create(140, y, item ? item.name : '-', { fontSize: 12, color: '#ffffff', align: 'left' })
-      );
-    });
+    switch (this.menuIndex) {
+      case 0: this.renderPartyPanel();   break;
+      case 1: this.renderEquipPanel();   break;
+      case 2: this.renderItemsPanel();   break;
+      case 3: this.renderSaveLoadPanel(); break;
+    }
   }
 
+  // ─── Sidebar ─────────────────────────────────────────────────────────────
+
   /**
-   * Shows the active character's equipped items (4 fixed slots) above
-   * their available inventory items (equippable items already worn
-   * by ANYONE are excluded, since they're not in GameState.inventory
-   * anymore — see GameState.equipItem). Enter equips/unequips
-   * whichever row has the cursor, depending on which section has
-   * focus (this.inventoryFocusedSection).
+   * Left-column (x 0–106) menu with four entries. The selected entry is
+   * highlighted in white; others in dim grey. When overlaySubState is
+   * null the sidebar has focus (cursor in the left column); otherwise
+   * focus has passed to the right panel and the sidebar is just decorative.
    */
-  renderInventoryView(character) {
-    const slotLabels = [
-      { key: 'primary', label: 'Primary' },
-      { key: 'secondary', label: 'Secondary' },
-      { key: 'body', label: 'Body' },
-      { key: 'head', label: 'Head' },
-    ];
+  renderSidebar() {
+    const LABELS = ['Party', 'Equip', 'Items', 'Save'];
+    const startX = 8;
+    const startY = 28;
+    const rowH = 18;
+    const sidebarFocused = (this.overlaySubState === null);
 
-    const equippedStartY = 54;
-    const equippedRowHeight = 15;
-
-    this.statusContentEls.push(
-      domText.create(20, equippedStartY - 14, 'Equipped:', { fontSize: 10, color: '#888888', align: 'left' })
+    this.overlayEls.push(
+      domText.create(startX, 14, 'MENU', { fontSize: 9, color: '#556677', align: 'left' })
     );
 
-    slotLabels.forEach((slot, i) => {
-      const y = equippedStartY + i * equippedRowHeight;
-      const equippedItem = character.equipment[slot.key];
-      const isSelected = this.inventoryFocusedSection === 'EQUIPPED' && this.equippedSelectedIndex === i;
+    LABELS.forEach((label, i) => {
+      const y = startY + i * rowH;
+      const isActive = (this.menuIndex === i);
+      const color = isActive ? '#ffffff' : '#556677';
 
-      this.statusContentEls.push(
-        domText.create(20, y, isSelected ? '>' : ' ', { fontSize: 12, color: '#ffff00', align: 'left' })
-      );
-      this.statusContentEls.push(
-        domText.create(34, y, `${slot.label}:`, { fontSize: 12, color: '#aaaaaa', align: 'left' })
-      );
-      this.statusContentEls.push(
-        domText.create(140, y, equippedItem ? equippedItem.name : '-', { fontSize: 12, color: '#ffffff', align: 'left' })
-      );
-    });
-
-    // --- Items section ---
-    const itemsStartY = equippedStartY + slotLabels.length * equippedRowHeight + 14;
-    const itemsRowHeight = 12;
-
-    this.statusContentEls.push(
-      domText.create(20, itemsStartY - 14, 'Items:', { fontSize: 10, color: '#888888', align: 'left' })
-    );
-
-    if (GameState.inventory.length === 0) {
-      this.statusContentEls.push(
-        domText.create(34, itemsStartY, '(empty)', { fontSize: 12, color: '#888888', align: 'left' })
-      );
-      return;
-    }
-
-    GameState.inventory.forEach((item, i) => {
-      const y = itemsStartY + i * itemsRowHeight;
-      const isSelected = this.inventoryFocusedSection === 'ITEMS' && this.itemsSelectedIndex === i;
-      const label = item.slot ? item.name : `${item.name} x${item.quantity}`;
-
-      this.statusContentEls.push(
-        domText.create(20, y, isSelected ? '>' : ' ', { fontSize: 12, color: '#ffff00', align: 'left' })
-      );
-      this.statusContentEls.push(
-        domText.create(34, y, label, { fontSize: 12, color: '#ffffff', align: 'left' })
-      );
-    });
-  }
-
-  /**
-   * Called when Enter is pressed while Inventory view is open. Acts
-   * on whichever row currently has the cursor, in whichever section
-   * has focus. Equipping and unequipping both go through
-   * GameState.equipItem/unequipItem so the inventory-list/slot
-   * bookkeeping always happens in one place.
-   */
-  confirmInventorySelection() {
-    const character = GameState.party[this.activeCharacterIndex];
-    const slotKeys = ['primary', 'secondary', 'body', 'head'];
-
-    if (this.inventoryFocusedSection === 'EQUIPPED') {
-      const slot = slotKeys[this.equippedSelectedIndex];
-      GameState.unequipItem(character, slot);
-      this.renderActiveView();
-      return;
-    }
-
-    const item = GameState.inventory[this.itemsSelectedIndex];
-    if (!item) return;
-
-    if (item.slot) {
-      // Equippable item — existing behavior unchanged.
-      GameState.equipItem(character, item);
-      this.itemsSelectedIndex = Math.min(
-        this.itemsSelectedIndex,
-        Math.max(0, GameState.inventory.length - 1)
-      );
-      this.renderActiveView();
-      return;
-    }
-
-    // Consumable item — look up its effect definition from EditorData.
-    const def = EditorData.getConsumableByName(item.name);
-    if (!def || !def.effect) {
-      // No wired effect yet (e.g. Antidote) — tell the player rather
-      // than silently doing nothing.
-      this.showConsumableMessage(`Can't use ${item.name} yet.`);
-      return;
-    }
-
-    // Open target selection. Left/Right navigates targets, Enter confirms.
-    this.consumableTargetState = { item, def, selectedTargetIndex: 0 };
-    this.renderConsumableTargetSelection();
-  }
-
-  /**
-   * Moves the selection cursor within whichever section currently has
-   * focus (Equipped's 4 fixed slots, or the Items list's variable
-   * length). Wraps around at each section's own boundary rather than
-   * sharing a single index across both, since the two sections have
-   * different, independent lengths.
-   */
-  moveInventorySelection(delta) {
-    if (this.inventoryFocusedSection === 'EQUIPPED') {
-      const slotCount = 4;
-      this.equippedSelectedIndex = (this.equippedSelectedIndex + delta + slotCount) % slotCount;
-    } else {
-      const itemCount = GameState.inventory.length;
-      if (itemCount === 0) return; // nothing to navigate to
-      this.itemsSelectedIndex = (this.itemsSelectedIndex + delta + itemCount) % itemCount;
-    }
-    this.renderActiveView();
-  }
-
-  /**
-   * Shows the current Save/Load mode and 3 slot rows. Each row shows
-   * either "(empty)" or a human-readable relative time since that
-   * slot was last saved, so the player has some sense of which save
-   * is which without needing exact timestamps.
-   */
-  renderSaveLoadView() {
-    const startY = 50;
-
-    this.statusContentEls.push(
-      domText.create(20, startY, `Mode: ${this.saveLoadMode}  (Space to switch)`, { fontSize: 12, color: '#ffcc33', align: 'left' })
-    );
-
-    const slotStartY = startY + 30;
-    const slotRowHeight = 20;
-
-    for (let i = 0; i < SaveSystem.NUM_SLOTS; i++) {
-      const slotNumber = i + 1;
-      const y = slotStartY + i * slotRowHeight;
-      const isSelected = this.saveLoadSelectedIndex === i;
-      const isAutoSlot = slotNumber === SaveSystem.AUTO_SAVE_SLOT;
-
-      const snapshot = SaveSystem.readSlot(slotNumber);
-      let statusText;
-      if (!snapshot) {
-        statusText = '(empty)';
-      } else {
-        const secondsAgo = Math.floor((Date.now() - snapshot.savedAt) / 1000);
-        statusText = secondsAgo < 60 ? `${secondsAgo}s ago` : `${Math.floor(secondsAgo / 60)}m ago`;
+      if (sidebarFocused && isActive) {
+        this.overlayEls.push(
+          domText.create(startX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' })
+        );
       }
-
-      const label = `Slot ${slotNumber}${isAutoSlot ? ' (auto)' : ''}: ${statusText}`;
-
-      this.statusContentEls.push(
-        domText.create(20, y, isSelected ? '>' : ' ', { fontSize: 12, color: '#ffff00', align: 'left' })
+      this.overlayEls.push(
+        domText.create(startX + 12, y, label, { fontSize: 12, color, align: 'left' })
       );
-      this.statusContentEls.push(
-        domText.create(34, y, label, { fontSize: 12, color: '#ffffff', align: 'left' })
-      );
-    }
-  }
-
-  /** Moves the slot selection cursor up/down, wrapping within the 3 slots. */
-  moveSaveLoadSelection(delta) {
-    const count = SaveSystem.NUM_SLOTS;
-    this.saveLoadSelectedIndex = (this.saveLoadSelectedIndex + delta + count) % count;
-    this.renderActiveView();
-  }
-
-  /**
-   * Called when Enter is pressed in Save/Load view. In Save mode,
-   * writes immediately (saving is low-risk — at worst you overwrite a
-   * slot you didn't mean to, but current progress is untouched). In
-   * Load mode, opens a confirmation dialogue first, reusing the same
-   * choice-dialogue system built for the monster encounter, since
-   * loading destructively overwrites current progress and deserves a
-   * deliberate confirm step.
-   */
-  confirmSaveLoadSelection() {
-    const slotNumber = this.saveLoadSelectedIndex + 1;
-
-    if (this.saveLoadMode === 'SAVE') {
-      SaveSystem.saveToSlot(slotNumber);
-      this.renderActiveView(); // refresh so the slot's "just now" timestamp shows immediately
-      return;
-    }
-
-    // LOAD mode
-    if (!SaveSystem.slotExists(slotNumber)) return; // nothing to load, Enter does nothing
-
-    this.openChoiceDialogue(`Load Slot ${slotNumber}? Current progress will be overwritten.`, [
-      { label: 'Load', action: () => this.performLoad(slotNumber) },
-      { label: 'Cancel', action: () => this.closeDialogue() },
-    ]);
-  }
-
-  /**
-   * Actually performs the load after confirmation. Gives real visual
-   * feedback rather than silently swapping data: closes the
-   * confirmation dialogue, shows a "Loaded!" message in place of the
-   * slot list, briefly holds so the player can register it succeeded,
-   * then fades the whole screen out, closes the overlay entirely, and
-   * fades back in on the map with the loaded state already active.
-   */
-  performLoad(slotNumber) {
-    SaveSystem.loadFromSlot(slotNumber);
-
-    // Close just the confirmation dialogue's own UI (not the overlay
-    // behind it) — closeDialogue() would normally also restore the
-    // Save/Load view via renderActiveView(), but we want to show our
-    // own temporary message instead, so we replicate only the
-    // dialogue-teardown part here rather than calling closeDialogue().
-    this.dialogueState = null;
-    this.dialogueBoxBg.setVisible(false);
-    this.dialogueTextEl.style.display = 'none';
-    this.dialogueChoiceTexts.forEach((el) => domText.remove(el));
-    this.dialogueChoiceTexts = [];
-    if (this.dialogueCursorEl) {
-      domText.remove(this.dialogueCursorEl);
-      this.dialogueCursorEl = null;
-    }
-
-    this.clearStatusContent();
-    domText.setText(this.statusTitleEl, 'SAVE / LOAD');
-    this.statusContentEls.push(
-      domText.create(this.cameras.main.width / 2, 110, `Loaded Slot ${slotNumber}!`, {
-        fontSize: 14,
-        color: '#33cc66',
-      })
-    );
-
-    this.time.delayedCall(900, () => {
-      this.cameras.main.fadeOut(400, 0, 0, 0);
-      domText.fadeOut();
-      this.cameras.main.once('camerafadeoutcomplete', () => {
-        this.closeStatusOverlay();
-        this.cameras.main.fadeIn(400, 0, 0, 0);
-        domText.fadeIn();
-      });
     });
+
+    // Hint line at bottom of sidebar
+    const hint = sidebarFocused ? '↑↓ nav  Enter select' : 'Esc back';
+    this.overlayEls.push(
+      domText.create(4, 118, hint, { fontSize: 8, color: '#334455', align: 'left' })
+    );
   }
 
+  // ─── Party panel ─────────────────────────────────────────────────────────
+
   /**
-   * Renders a target-selection view over the current Inventory panel,
-   * showing all party members with a cursor on the currently selected
-   * one. Left/Right moves the cursor, Enter confirms, Escape cancels
-   * back to the normal Inventory view.
+   * Right panel for menu index 0. Shows all party members stacked
+   * vertically; each row has a portrait placeholder box on the left,
+   * then name / HP / MP stacked to its right. Up/Down navigates (unused
+   * in this version — listed for future party-order editing).
    */
-  renderConsumableTargetSelection() {
-    if (!this.consumableTargetState) return;
-    const { item, selectedTargetIndex } = this.consumableTargetState;
+  renderPartyPanel() {
+    const RX = 116; // right panel content left edge
+    const startY = 20;
+    const rowH = 36;
 
-    this.clearStatusContent();
-    domText.setText(this.statusTitleEl, `Use ${item.name} on who?`);
-
-    const startY = 54;
-    const rowH = 24;
-
-    this.statusContentEls.push(
-      domText.create(20, startY - 16, 'Left/Right: select  Enter: use  Esc: cancel', {
-        fontSize: 9, color: '#888888', align: 'left',
-      })
+    this.overlayEls.push(
+      domText.create(RX, 10, 'PARTY', { fontSize: 9, color: '#556677', align: 'left' })
     );
 
     GameState.party.forEach((member, i) => {
       const y = startY + i * rowH;
-      const isSelected = selectedTargetIndex === i;
-      const hpText = `HP: ${member.hp}/${member.maxHp}`;
+      const isSelected = (this.overlaySubState === 'PARTY' && this.partySelectedIndex === i);
+      const stats = GameState.getEffectiveStats(member);
 
-      this.statusContentEls.push(
-        domText.create(20, y, isSelected ? '>' : ' ', { fontSize: 12, color: '#ffff00', align: 'left' })
+      // Portrait placeholder: a simple coloured rectangle drawn via Phaser
+      // (not DOM). Store nothing extra — we destroy and redraw on every render.
+      // We can't store Phaser GameObjects in overlayEls (they use domText.remove),
+      // so portraits are managed separately in overlayPortraits[].
+      // (Handled after this forEach — see below.)
+
+      // Cursor
+      if (isSelected) {
+        this.overlayEls.push(
+          domText.create(RX - 10, y + 10, '>', { fontSize: 12, color: '#ffff00', align: 'left' })
+        );
+      }
+
+      // Name
+      const nameColor = member.hp <= 0 ? '#884444' : '#ffffff';
+      this.overlayEls.push(
+        domText.create(RX + 26, y, member.name, { fontSize: 12, color: nameColor, align: 'left' })
       );
-      this.statusContentEls.push(
-        domText.create(34, y, member.name, { fontSize: 12, color: isSelected ? '#ffffff' : '#888888', align: 'left' })
+
+      // HP bar text
+      const hpColor = member.hp / member.maxHp > 0.4 ? '#33cc66' : '#cc4444';
+      this.overlayEls.push(
+        domText.create(RX + 26, y + 13, `HP ${member.hp}/${member.maxHp}`, { fontSize: 10, color: hpColor, align: 'left' })
       );
-      this.statusContentEls.push(
-        domText.create(140, y, hpText, { fontSize: 12, color: '#33cc66', align: 'left' })
+
+      // MP
+      this.overlayEls.push(
+        domText.create(RX + 26, y + 24, `MP ${member.mp}/${member.maxMp}`, { fontSize: 10, color: '#5599ff', align: 'left' })
       );
+
+      // Level / XP mini line
+      this.overlayEls.push(
+        domText.create(RX + 120, y, `Lv ${member.level}`, { fontSize: 10, color: '#ffcc33', align: 'left' })
+      );
+      this.overlayEls.push(
+        domText.create(RX + 120, y + 13, `XP ${member.xp}/${GameState.xpThresholdForLevel(member.level)}`, { fontSize: 9, color: '#887744', align: 'left' })
+      );
+    });
+
+    // Portrait placeholders (Phaser rectangles, not DOM — must be cleaned up separately).
+    this._destroyPortraits();
+    this._overlayPortraits = GameState.party.map((member, i) => {
+      const px = RX * domText.ZOOM; // not used for Phaser objects — keep in game coords
+      const y = startY + i * rowH;
+      // 20×26 portrait box in game pixels
+      const rect = this.add.rectangle(
+        RX + 10,
+        y + 13,
+        20, 26,
+        member.hp > 0 ? 0x224466 : 0x442222
+      ).setScrollFactor(0).setOrigin(0.5);
+      return rect;
     });
   }
 
-  /** Shows a brief status message in place of the overlay content, then restores after a short delay. */
-  showConsumableMessage(msg) {
-    this.clearStatusContent();
-    this.statusContentEls.push(
-      domText.create(this.cameras.main.width / 2, 110, msg, {
-        fontSize: 12, color: '#ffcc33',
-      })
-    );
-    this.time.delayedCall(1200, () => {
-      if (this.statusOverlayOpen) this.renderActiveView();
-    });
+  /** Cleans up Phaser portrait rectangles from the previous render. */
+  _destroyPortraits() {
+    if (this._overlayPortraits) {
+      this._overlayPortraits.forEach(r => r.destroy());
+    }
+    this._overlayPortraits = [];
   }
+
+  // ─── Equip panel ─────────────────────────────────────────────────────────
 
   /**
-   * Applies the consumable's effect to the selected target, consumes
-   * one unit of the item, then closes target selection and refreshes
-   * the inventory view.
+   * Right panel for menu index 1. Two sub-states:
+   *   EQUIP_SLOTS  — cursor on one of the 4 equipment slots for equipCharIndex
+   *   EQUIP_ITEMS  — cursor in the available item list for that slot
+   *
+   * Left/Right switches between party members (equipCharIndex).
+   * Up/Down navigates within the focused section.
+   * Enter on a slot → move focus to item list.
+   * Enter on an item → equip it, return to slot list.
+   * Enter on an occupied slot (EQUIP_SLOTS) → unequip, stay on slot list.
    */
+  renderEquipPanel() {
+    const RX = 116;
+    const SLOT_LABELS = [
+      { key: 'primary',   label: 'Primary'   },
+      { key: 'secondary', label: 'Secondary' },
+      { key: 'body',      label: 'Body'      },
+      { key: 'head',      label: 'Head'      },
+    ];
+
+    const character = GameState.party[this.equipCharIndex];
+    if (!character) return;
+
+    // Character selector header
+    this.overlayEls.push(
+      domText.create(RX, 10, 'EQUIP', { fontSize: 9, color: '#556677', align: 'left' })
+    );
+    this.overlayEls.push(
+      domText.create(RX + 50, 10, `◄ ${character.name} ►`, { fontSize: 10, color: '#ffcc33', align: 'left' })
+    );
+
+    // Equipped slots
+    const slotStartY = 26;
+    const slotRowH = 16;
+
+    this.overlayEls.push(
+      domText.create(RX, slotStartY - 10, 'Equipped:', { fontSize: 9, color: '#556677', align: 'left' })
+    );
+
+    SLOT_LABELS.forEach((slot, i) => {
+      const y = slotStartY + i * slotRowH;
+      const equipped = character.equipment[slot.key];
+      const isSelected = (this.overlaySubState === 'EQUIP_SLOTS' || this.overlaySubState === null) && this.equipSlotIndex === i;
+
+      if (isSelected && this.overlaySubState === 'EQUIP_SLOTS') {
+        this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
+      }
+      this.overlayEls.push(domText.create(RX + 10, y, slot.label + ':', { fontSize: 10, color: '#aaaaaa', align: 'left' }));
+      this.overlayEls.push(domText.create(RX + 80, y, equipped ? equipped.name : '-', { fontSize: 10, color: equipped ? '#ffffff' : '#445566', align: 'left' }));
+    });
+
+    // Available items for the selected slot
+    const itemsStartY = slotStartY + SLOT_LABELS.length * slotRowH + 14;
+    const itemRowH = 13;
+
+    if (this.overlaySubState === 'EQUIP_ITEMS') {
+      const targetSlot = SLOT_LABELS[this.equipSlotIndex].key;
+      const available = GameState.inventory.filter(it => it.slot === targetSlot);
+
+      this.overlayEls.push(
+        domText.create(RX, itemsStartY - 10, `Available (${SLOT_LABELS[this.equipSlotIndex].label}):`, { fontSize: 9, color: '#556677', align: 'left' })
+      );
+
+      if (available.length === 0) {
+        this.overlayEls.push(
+          domText.create(RX + 10, itemsStartY, '(none)', { fontSize: 10, color: '#445566', align: 'left' })
+        );
+      } else {
+        available.forEach((item, i) => {
+          const y = itemsStartY + i * itemRowH;
+          const isSelected = this.equipItemIndex === i;
+          if (isSelected) {
+            this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
+          }
+          this.overlayEls.push(domText.create(RX + 10, y, item.name, { fontSize: 10, color: '#ffffff', align: 'left' }));
+        });
+      }
+    } else {
+      this.overlayEls.push(
+        domText.create(RX, itemsStartY, 'Enter to select slot', { fontSize: 9, color: '#334455', align: 'left' })
+      );
+    }
+  }
+
+  /** Confirm action in EQUIP_SLOTS: move to item list, or unequip if slot is occupied. */
+  _equipConfirmSlot() {
+    const character = GameState.party[this.equipCharIndex];
+    const slotKeys = ['primary', 'secondary', 'body', 'head'];
+    const slot = slotKeys[this.equipSlotIndex];
+    if (character.equipment[slot]) {
+      GameState.unequipItem(character, slot);
+      this.renderOverlay();
+    } else {
+      this.overlaySubState = 'EQUIP_ITEMS';
+      this.equipItemIndex = 0;
+      this.renderOverlay();
+    }
+  }
+
+  /** Confirm action in EQUIP_ITEMS: equip the selected item. */
+  _equipConfirmItem() {
+    const character = GameState.party[this.equipCharIndex];
+    const slotKeys = ['primary', 'secondary', 'body', 'head'];
+    const targetSlot = slotKeys[this.equipSlotIndex];
+    const available = GameState.inventory.filter(it => it.slot === targetSlot);
+    const item = available[this.equipItemIndex];
+    if (item) {
+      GameState.equipItem(character, item);
+    }
+    this.overlaySubState = 'EQUIP_SLOTS';
+    this.equipItemIndex = 0;
+    this.renderOverlay();
+  }
+
+  // ─── Items panel ─────────────────────────────────────────────────────────
+
+  /**
+   * Right panel for menu index 2. Two sub-states:
+   *   ITEMS_SELECT — cursor on a consumable in inventory
+   *   ITEMS_TARGET — picking which party member to use the item on
+   */
+  renderItemsPanel() {
+    const RX = 116;
+
+    this.overlayEls.push(
+      domText.create(RX, 10, 'ITEMS', { fontSize: 9, color: '#556677', align: 'left' })
+    );
+
+    if (this.overlaySubState === 'ITEMS_TARGET') {
+      this._renderItemsTargetView(RX);
+      return;
+    }
+
+    // Consumables only
+    const consumables = GameState.inventory.filter(it => !it.slot);
+
+    if (consumables.length === 0) {
+      this.overlayEls.push(
+        domText.create(RX + 10, 30, '(no items)', { fontSize: 10, color: '#445566', align: 'left' })
+      );
+      return;
+    }
+
+    const startY = 24;
+    const rowH = 14;
+
+    consumables.forEach((item, i) => {
+      const y = startY + i * rowH;
+      const isSelected = (this.overlaySubState === 'ITEMS_SELECT') && this.itemsSelectedIndex === i;
+      if (isSelected) {
+        this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
+      }
+      this.overlayEls.push(
+        domText.create(RX + 10, y, `${item.name} x${item.quantity}`, { fontSize: 10, color: '#ffffff', align: 'left' })
+      );
+    });
+
+    if (this.overlaySubState !== 'ITEMS_SELECT') {
+      this.overlayEls.push(
+        domText.create(RX, 110, 'Enter to use', { fontSize: 9, color: '#334455', align: 'left' })
+      );
+    }
+  }
+
+  _renderItemsTargetView(RX) {
+    const startY = 26;
+    const rowH = 22;
+
+    this.overlayEls.push(
+      domText.create(RX, 20, 'Use on who?', { fontSize: 10, color: '#ffcc33', align: 'left' })
+    );
+
+    GameState.party.forEach((member, i) => {
+      const y = startY + i * rowH + 8;
+      const isSelected = this.itemsTargetIndex === i;
+      const hpColor = member.hp / member.maxHp > 0.4 ? '#33cc66' : '#cc4444';
+
+      if (isSelected) {
+        this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
+      }
+      this.overlayEls.push(
+        domText.create(RX + 10, y, member.name, { fontSize: 10, color: isSelected ? '#ffffff' : '#778899', align: 'left' })
+      );
+      this.overlayEls.push(
+        domText.create(RX + 80, y, `HP ${member.hp}/${member.maxHp}`, { fontSize: 10, color: hpColor, align: 'left' })
+      );
+    });
+  }
+
+  /** Applies a consumable item to the selected party member. */
   applyConsumable() {
-    if (!this.consumableTargetState) return;
-    const { item, def, selectedTargetIndex } = this.consumableTargetState;
-    const target = GameState.party[selectedTargetIndex];
+    const consumables = GameState.inventory.filter(it => !it.slot);
+    const item = consumables[this.itemsSelectedIndex];
+    if (!item) return;
+
+    const def = EditorData.getConsumableByName(item.name);
+    if (!def || !def.effect) {
+      this._showOverlayMessage(`Can't use ${item.name} yet.`);
+      return;
+    }
+
+    const target = GameState.party[this.itemsTargetIndex];
 
     if (def.effect.type === 'heal') {
       if (target.hp >= target.maxHp) {
-        this.consumableTargetState = null;
-        this.showConsumableMessage(`${target.name} is already at full HP!`);
+        this.overlaySubState = 'ITEMS_SELECT';
+        this._showOverlayMessage(`${target.name} is already at full HP!`);
         return;
       }
       const healAmount = Math.floor(
@@ -914,7 +823,6 @@ class MapScene extends Phaser.Scene {
       ) + def.effect.minAmount;
       target.hp = Math.min(target.maxHp, target.hp + healAmount);
 
-      // Consume one unit — remove the entry entirely if it hits 0.
       item.quantity -= 1;
       if (item.quantity <= 0) {
         const idx = GameState.inventory.indexOf(item);
@@ -922,21 +830,118 @@ class MapScene extends Phaser.Scene {
         this.itemsSelectedIndex = Math.max(0, this.itemsSelectedIndex - 1);
       }
 
-      this.consumableTargetState = null;
-      this.showConsumableMessage(`${target.name} recovered ${healAmount} HP!`);
+      this.overlaySubState = 'ITEMS_SELECT';
+      this._showOverlayMessage(`${target.name} recovered ${healAmount} HP!`);
     }
   }
 
+  /** Shows a brief message in the right panel, then restores the current view. */
+  _showOverlayMessage(msg) {
+    this.clearOverlayContent();
+    this.renderSidebar();
+
+    const RX = 116;
+    this.overlayEls.push(
+      domText.create(RX + (320 - RX) / 2 - RX / 2, 64, msg, { fontSize: 12, color: '#ffcc33' })
+    );
+
+    this.time.delayedCall(1200, () => {
+      if (this.overlayOpen) this.renderOverlay();
+    });
+  }
+
+  // ─── Save/Load panel ─────────────────────────────────────────────────────
+
   /**
-   * Moves the target-selection cursor left or right, wrapping within
-   * the party list.
+   * Right panel for menu index 3. Space toggles SAVE/LOAD mode;
+   * Up/Down picks a slot; Enter performs the action.
    */
-  moveConsumableTarget(delta) {
-    if (!this.consumableTargetState) return;
-    const count = GameState.party.length;
-    this.consumableTargetState.selectedTargetIndex =
-      (this.consumableTargetState.selectedTargetIndex + delta + count) % count;
-    this.renderConsumableTargetSelection();
+  renderSaveLoadPanel() {
+    const RX = 116;
+
+    this.overlayEls.push(
+      domText.create(RX, 10, 'SAVE / LOAD', { fontSize: 9, color: '#556677', align: 'left' })
+    );
+    this.overlayEls.push(
+      domText.create(RX, 24, `Mode: ${this.saveLoadMode}`, { fontSize: 10, color: '#ffcc33', align: 'left' })
+    );
+    this.overlayEls.push(
+      domText.create(RX + 100, 24, '[Space] toggle', { fontSize: 9, color: '#445566', align: 'left' })
+    );
+
+    const slotStartY = 42;
+    const slotRowH = 20;
+
+    for (let i = 0; i < SaveSystem.NUM_SLOTS; i++) {
+      const slotNumber = i + 1;
+      const y = slotStartY + i * slotRowH;
+      const isSelected = (this.overlaySubState === 'SAVELOAD') && this.saveLoadSelectedIndex === i;
+      const isAuto = slotNumber === SaveSystem.AUTO_SAVE_SLOT;
+
+      const snapshot = SaveSystem.readSlot(slotNumber);
+      let statusText = '(empty)';
+      if (snapshot) {
+        const secs = Math.floor((Date.now() - snapshot.savedAt) / 1000);
+        statusText = secs < 60 ? `${secs}s ago` : `${Math.floor(secs / 60)}m ago`;
+      }
+
+      const label = `Slot ${slotNumber}${isAuto ? ' (auto)' : ''}: ${statusText}`;
+
+      if (isSelected) {
+        this.overlayEls.push(domText.create(RX, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' }));
+      }
+      this.overlayEls.push(
+        domText.create(RX + 10, y, label, { fontSize: 10, color: '#ffffff', align: 'left' })
+      );
+    }
+  }
+
+  confirmSaveLoadSelection() {
+    const slotNumber = this.saveLoadSelectedIndex + 1;
+
+    if (this.saveLoadMode === 'SAVE') {
+      SaveSystem.saveToSlot(slotNumber);
+      this.renderOverlay();
+      return;
+    }
+
+    if (!SaveSystem.slotExists(slotNumber)) return;
+
+    this.openChoiceDialogue(`Load Slot ${slotNumber}? Current progress will be overwritten.`, [
+      { label: 'Load', action: () => this.performLoad(slotNumber) },
+      { label: 'Cancel', action: () => this.closeDialogue() },
+    ]);
+  }
+
+  performLoad(slotNumber) {
+    SaveSystem.loadFromSlot(slotNumber);
+
+    // Tear down dialogue manually (don't call closeDialogue — that
+    // would re-render the overlay, but we want our own message instead).
+    this.dialogueState = null;
+    this.dialogueBoxBg.setVisible(false);
+    this.dialogueTextEl.style.display = 'none';
+    this.dialogueChoiceTexts.forEach(el => domText.remove(el));
+    this.dialogueChoiceTexts = [];
+    if (this.dialogueCursorEl) { domText.remove(this.dialogueCursorEl); this.dialogueCursorEl = null; }
+
+    // Show "Loaded!" message briefly, then fade → close overlay → fade back.
+    this.clearOverlayContent();
+    this.renderSidebar();
+    const RX = 116;
+    this.overlayEls.push(
+      domText.create(RX + 60, 64, `Loaded Slot ${slotNumber}!`, { fontSize: 14, color: '#33cc66' })
+    );
+
+    this.time.delayedCall(900, () => {
+      this.cameras.main.fadeOut(400, 0, 0, 0);
+      domText.fadeOut();
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        this.closeOverlay();
+        this.cameras.main.fadeIn(400, 0, 0, 0);
+        domText.fadeIn();
+      });
+    });
   }
 
   /**
@@ -1028,11 +1033,10 @@ class MapScene extends Phaser.Scene {
   update() {
     // Dialogue (e.g. a Load confirmation opened from within the
     // Save/Load overlay view) takes priority over the overlay itself.
-    // This check has to come BEFORE the statusOverlayOpen check below
-    // — otherwise, since that block returns unconditionally, a
-    // dialogue opened while the overlay is open would never receive
-    // its own input at all, leaving Fight/Flee-style confirmations
-    // completely unusable from inside the overlay.
+    // This check has to come BEFORE the overlay check below — otherwise,
+    // since that block returns unconditionally, a dialogue opened while
+    // the overlay is open would never receive its own input at all,
+    // leaving Fight/Flee-style confirmations completely unusable.
     if (this.dialogueState === 'MESSAGE') {
       if (Phaser.Input.Keyboard.JustDown(this.enterKey)) {
         this.closeDialogue();
@@ -1053,69 +1057,167 @@ class MapScene extends Phaser.Scene {
       return;
     }
 
-    // The status/inventory overlay takes top priority over normal
-    // movement — if it's open (and no dialogue is, per the checks
-    // above), it owns all input.
-    if (this.statusOverlayOpen) {
-      if (Phaser.Input.Keyboard.JustDown(this.qKey)) {
-        this.switchCharacter(-1);
-      } else if (Phaser.Input.Keyboard.JustDown(this.eKey)) {
-        this.switchCharacter(1);
-      } else if (Phaser.Input.Keyboard.JustDown(this.tabKey)) {
-        this.switchView();
-      } else if (Phaser.Input.Keyboard.JustDown(this.statusKey)
-        || Phaser.Input.Keyboard.JustDown(this.escKey)) {
-        this.closeStatusOverlay();
-      } else if (this.activeView === 'INVENTORY') {
-        // If we're in consumable target-selection mode, that sub-state
-        // owns Left/Right/Enter/Escape — normal inventory navigation is
-        // suspended until the player confirms or cancels.
-        if (this.consumableTargetState) {
-          if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
-            this.moveConsumableTarget(-1);
-          } else if (Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
-            this.moveConsumableTarget(1);
-          } else if (Phaser.Input.Keyboard.JustDown(this.enterKey)) {
-            this.applyConsumable();
-          } else if (Phaser.Input.Keyboard.JustDown(this.escKey)) {
-            this.consumableTargetState = null;
-            this.renderActiveView();
-          }
-        } else {
-          // Normal inventory navigation.
-          if (Phaser.Input.Keyboard.JustDown(this.cursors.left) || Phaser.Input.Keyboard.JustDown(this.cursors.right)) {
-            this.inventoryFocusedSection = this.inventoryFocusedSection === 'EQUIPPED' ? 'ITEMS' : 'EQUIPPED';
-            this.renderActiveView();
-          } else if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
-            this.moveInventorySelection(-1);
-          } else if (Phaser.Input.Keyboard.JustDown(this.cursors.down)) {
-            this.moveInventorySelection(1);
-          } else if (Phaser.Input.Keyboard.JustDown(this.enterKey)) {
-            this.confirmInventorySelection();
+    // The overlay takes top priority over normal movement — if it's open
+    // (and no dialogue is, per the checks above), it owns all input.
+    if (this.overlayOpen) {
+      const jdUp    = Phaser.Input.Keyboard.JustDown(this.cursors.up);
+      const jdDown  = Phaser.Input.Keyboard.JustDown(this.cursors.down);
+      const jdLeft  = Phaser.Input.Keyboard.JustDown(this.cursors.left);
+      const jdRight = Phaser.Input.Keyboard.JustDown(this.cursors.right);
+      const jdEnter = Phaser.Input.Keyboard.JustDown(this.enterKey);
+      const jdEsc   = Phaser.Input.Keyboard.JustDown(this.escKey);
+      const jdP     = Phaser.Input.Keyboard.JustDown(this.overlayKey);
+      const jdI     = Phaser.Input.Keyboard.JustDown(this.overlayKeyI);
+      const jdSpace = Phaser.Input.Keyboard.JustDown(this.spaceKey);
+
+      // P / I / Esc always close or back out one level.
+      if (jdP || jdI) { this.closeOverlay(); return; }
+
+      // ── No sub-state: sidebar has focus ──────────────────────────────
+      if (this.overlaySubState === null) {
+        if (jdEsc) { this.closeOverlay(); return; }
+
+        if (jdUp) {
+          this.menuIndex = (this.menuIndex - 1 + 4) % 4;
+          // Reset all sub-indices when navigating the sidebar so stale
+          // positions from a previous panel don't carry over.
+          this.partySelectedIndex = 0;
+          this.equipSlotIndex = 0; this.equipItemIndex = 0;
+          this.itemsSelectedIndex = 0; this.itemsTargetIndex = 0;
+          this.saveLoadSelectedIndex = 0;
+          this.renderOverlay();
+        } else if (jdDown) {
+          this.menuIndex = (this.menuIndex + 1) % 4;
+          this.partySelectedIndex = 0;
+          this.equipSlotIndex = 0; this.equipItemIndex = 0;
+          this.itemsSelectedIndex = 0; this.itemsTargetIndex = 0;
+          this.saveLoadSelectedIndex = 0;
+          this.renderOverlay();
+        } else if (jdEnter || jdRight) {
+          // Descend into the right panel for the current menu item.
+          const subStates = ['PARTY', 'EQUIP_SLOTS', 'ITEMS_SELECT', 'SAVELOAD'];
+          this.overlaySubState = subStates[this.menuIndex];
+          this.renderOverlay();
+        }
+        return;
+      }
+
+      // ── PARTY sub-state ───────────────────────────────────────────────
+      if (this.overlaySubState === 'PARTY') {
+        if (jdEsc || jdLeft) { this.overlaySubState = null; this.renderOverlay(); return; }
+        if (jdUp) {
+          this.partySelectedIndex = (this.partySelectedIndex - 1 + GameState.party.length) % GameState.party.length;
+          this.renderOverlay();
+        } else if (jdDown) {
+          this.partySelectedIndex = (this.partySelectedIndex + 1) % GameState.party.length;
+          this.renderOverlay();
+        }
+        return;
+      }
+
+      // ── EQUIP_SLOTS sub-state ─────────────────────────────────────────
+      if (this.overlaySubState === 'EQUIP_SLOTS') {
+        if (jdEsc) { this.overlaySubState = null; this.renderOverlay(); return; }
+        if (jdLeft) {
+          // Left/Right cycle through party members for equipment management.
+          this.equipCharIndex = (this.equipCharIndex - 1 + GameState.party.length) % GameState.party.length;
+          this.equipSlotIndex = 0; this.renderOverlay();
+        } else if (jdRight) {
+          this.equipCharIndex = (this.equipCharIndex + 1) % GameState.party.length;
+          this.equipSlotIndex = 0; this.renderOverlay();
+        } else if (jdUp) {
+          this.equipSlotIndex = (this.equipSlotIndex - 1 + 4) % 4;
+          this.renderOverlay();
+        } else if (jdDown) {
+          this.equipSlotIndex = (this.equipSlotIndex + 1) % 4;
+          this.renderOverlay();
+        } else if (jdEnter) {
+          this._equipConfirmSlot();
+        }
+        return;
+      }
+
+      // ── EQUIP_ITEMS sub-state ─────────────────────────────────────────
+      if (this.overlaySubState === 'EQUIP_ITEMS') {
+        if (jdEsc || jdLeft) { this.overlaySubState = 'EQUIP_SLOTS'; this.renderOverlay(); return; }
+        const slotKeys = ['primary', 'secondary', 'body', 'head'];
+        const targetSlot = slotKeys[this.equipSlotIndex];
+        const available = GameState.inventory.filter(it => it.slot === targetSlot);
+        if (jdUp) {
+          this.equipItemIndex = (this.equipItemIndex - 1 + Math.max(1, available.length)) % Math.max(1, available.length);
+          this.renderOverlay();
+        } else if (jdDown) {
+          this.equipItemIndex = (this.equipItemIndex + 1) % Math.max(1, available.length);
+          this.renderOverlay();
+        } else if (jdEnter) {
+          this._equipConfirmItem();
+        }
+        return;
+      }
+
+      // ── ITEMS_SELECT sub-state ────────────────────────────────────────
+      if (this.overlaySubState === 'ITEMS_SELECT') {
+        if (jdEsc || jdLeft) { this.overlaySubState = null; this.renderOverlay(); return; }
+        const consumables = GameState.inventory.filter(it => !it.slot);
+        if (jdUp) {
+          this.itemsSelectedIndex = (this.itemsSelectedIndex - 1 + Math.max(1, consumables.length)) % Math.max(1, consumables.length);
+          this.renderOverlay();
+        } else if (jdDown) {
+          this.itemsSelectedIndex = (this.itemsSelectedIndex + 1) % Math.max(1, consumables.length);
+          this.renderOverlay();
+        } else if (jdEnter && consumables.length > 0) {
+          const def = EditorData.getConsumableByName(consumables[this.itemsSelectedIndex].name);
+          if (def && def.effect) {
+            this.overlaySubState = 'ITEMS_TARGET';
+            this.itemsTargetIndex = 0;
+            this.renderOverlay();
+          } else {
+            this._showOverlayMessage(`Can't use ${consumables[this.itemsSelectedIndex].name} yet.`);
           }
         }
-      } else if (this.activeView === 'SAVELOAD') {
-        // Space toggles Save<->Load mode; Up/Down pick a slot;
-        // Enter performs the active mode's action on that slot.
-        if (Phaser.Input.Keyboard.JustDown(this.spaceKey)) {
+        return;
+      }
+
+      // ── ITEMS_TARGET sub-state ────────────────────────────────────────
+      if (this.overlaySubState === 'ITEMS_TARGET') {
+        if (jdEsc || jdLeft) { this.overlaySubState = 'ITEMS_SELECT'; this.renderOverlay(); return; }
+        if (jdUp) {
+          this.itemsTargetIndex = (this.itemsTargetIndex - 1 + GameState.party.length) % GameState.party.length;
+          this.renderOverlay();
+        } else if (jdDown) {
+          this.itemsTargetIndex = (this.itemsTargetIndex + 1) % GameState.party.length;
+          this.renderOverlay();
+        } else if (jdEnter) {
+          this.applyConsumable();
+        }
+        return;
+      }
+
+      // ── SAVELOAD sub-state ────────────────────────────────────────────
+      if (this.overlaySubState === 'SAVELOAD') {
+        if (jdEsc || jdLeft) { this.overlaySubState = null; this.renderOverlay(); return; }
+        if (jdSpace) {
           this.saveLoadMode = this.saveLoadMode === 'SAVE' ? 'LOAD' : 'SAVE';
-          this.renderActiveView();
-        } else if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
-          this.moveSaveLoadSelection(-1);
-        } else if (Phaser.Input.Keyboard.JustDown(this.cursors.down)) {
-          this.moveSaveLoadSelection(1);
-        } else if (Phaser.Input.Keyboard.JustDown(this.enterKey)) {
+          this.renderOverlay();
+        } else if (jdUp) {
+          this.saveLoadSelectedIndex = (this.saveLoadSelectedIndex - 1 + SaveSystem.NUM_SLOTS) % SaveSystem.NUM_SLOTS;
+          this.renderOverlay();
+        } else if (jdDown) {
+          this.saveLoadSelectedIndex = (this.saveLoadSelectedIndex + 1) % SaveSystem.NUM_SLOTS;
+          this.renderOverlay();
+        } else if (jdEnter) {
           this.confirmSaveLoadSelection();
         }
+        return;
       }
-      return;
+
+      return; // unknown sub-state — consume input to avoid leaking to movement
     }
 
-    // I opens the status overlay from normal movement state. Checked
-    // here (not earlier) so it only fires when nothing else owns
-    // input — pressing I mid-dialogue, for instance, does nothing.
-    if (Phaser.Input.Keyboard.JustDown(this.statusKey)) {
-      this.openStatusOverlay();
+    // P or I opens the overlay from normal movement state.
+    if (Phaser.Input.Keyboard.JustDown(this.overlayKey)
+        || Phaser.Input.Keyboard.JustDown(this.overlayKeyI)) {
+      this.openOverlay();
       return;
     }
 
