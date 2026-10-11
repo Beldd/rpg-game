@@ -443,7 +443,15 @@ class MapScene extends Phaser.Scene {
     this.overlaySubState = null;
     this.overlayBg.setVisible(true);
     this.overlayDivider.setVisible(true);
-    this.renderOverlay();
+    try {
+      this.renderOverlay();
+    } catch (e) {
+      console.error('[Overlay] renderOverlay() threw on open:', e);
+      // Close cleanly so the update loop doesn't get stuck
+      this.overlayOpen = false;
+      this.overlayBg.setVisible(false);
+      this.overlayDivider.setVisible(false);
+    }
   }
 
   closeOverlay() {
@@ -470,14 +478,19 @@ class MapScene extends Phaser.Scene {
    * of truth for what gets drawn.
    */
   renderOverlay() {
-    this.clearOverlayContent();
-    this.renderSidebar();
+    try {
+      this.clearOverlayContent();
+      this.renderSidebar();
 
-    switch (this.menuIndex) {
-      case 0: this.renderPartyPanel();   break;
-      case 1: this.renderEquipPanel();   break;
-      case 2: this.renderItemsPanel();   break;
-      case 3: this.renderSaveLoadPanel(); break;
+      switch (this.menuIndex) {
+        case 0: this.renderPartyPanel();    break;
+        case 1: this.renderEquipPanel();    break;
+        case 2: this.renderItemsPanel();    break;
+        case 3: this.renderSaveLoadPanel(); break;
+      }
+    } catch (e) {
+      console.error('[Overlay] render error (menuIndex=' + this.menuIndex
+        + ', subState=' + this.overlaySubState + '):', e);
     }
   }
 
