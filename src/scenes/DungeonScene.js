@@ -45,6 +45,11 @@ class DungeonScene extends Phaser.Scene {
     this.encounterTriggered = false;
     this.activeEncounterId = null;
     this.transitionTriggered = false;
+
+    // Tile bag for random encounters — same pattern as MapScene.
+    // 15 tokens, 1 encounter, 14 safe. Bag is filled on first draw.
+    this._encounterBag    = [];
+    this._encounterBagIdx = 0;
   }
 
   preload() {
@@ -69,6 +74,9 @@ class DungeonScene extends Phaser.Scene {
     this.dialogueOptions = [];
     this.dialogueSelectedIndex = 0;
     this.activeEncounterId = null;
+    // Reset bag so each dungeon visit starts with a fresh shuffle.
+    this._encounterBag    = [];
+    this._encounterBagIdx = 0;
 
     domText.fadeIn();
     this.cameras.main.setBackgroundColor('#000000');
@@ -158,6 +166,62 @@ class DungeonScene extends Phaser.Scene {
     return this.BLOCKED_TILES.includes(tile.index);
   }
 
+  // ─── Random encounter helpers ────────────────────────────────────────────
+
+  _refillEncounterBag() {
+    this._encounterBag = [true, ...Array(14).fill(false)];
+    for (let i = this._encounterBag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this._encounterBag[i], this._encounterBag[j]] = [this._encounterBag[j], this._encounterBag[i]];
+    }
+    this._encounterBagIdx = 0;
+  }
+
+  _drawEncounterToken() {
+    if (this._encounterBagIdx >= this._encounterBag.length) this._refillEncounterBag();
+    return this._encounterBag[this._encounterBagIdx++];
+  }
+
+  /**
+   * Called after each completed step. The dungeon is always zone 'dungeon',
+   * so no coordinate-based zone lookup is needed here.
+   */
+  _checkRandomEncounter() {
+    const encounterIds = EditorData.getRandomEncounterIds('dungeon');
+    if (!encounterIds.length) return false;
+    if (!this._drawEncounterToken()) return false;
+
+    const encId = encounterIds[Math.floor(Math.random() * encounterIds.length)];
+    this.activeEncounterId = encId;
+    this._triggerRandomEncounter();
+    return true;
+  }
+
+  _triggerRandomEncounter() {
+    if (this.encounterTriggered) return;
+    this.encounterTriggered = true;
+
+    if (GameState.party.every(m => m.hp <= 0)) {
+      this.cameras.main.fadeOut(400, 0, 0, 0);
+      domText.fadeOut();
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        domText.clearAll();
+        this.scene.start('GameOverScene');
+      });
+      return;
+    }
+
+    this.cameras.main.fadeOut(400, 0, 0, 0);
+    domText.fadeOut();
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      domText.clearAll();
+      this.scene.start('BattleScene', {
+        encounterId: this.activeEncounterId,
+        returnScene: 'DungeonScene',
+      });
+    });
+  }
+
   // ─── Movement ────────────────────────────────────────────────────────────
 
   tryMove(dx, dy) {
@@ -195,7 +259,12 @@ class DungeonScene extends Phaser.Scene {
       x: targetTileX * this.TILE_SIZE + this.TILE_SIZE / 2,
       y: targetTileY * this.TILE_SIZE + this.TILE_SIZE / 2,
       duration: 150,
-      onComplete: () => { this.isMoving = false; },
+      onComplete: () => {
+        this.isMoving = false;
+        if (!this.encounterTriggered) {
+          this._checkRandomEncounter();
+        }
+      },
     });
   }
 
