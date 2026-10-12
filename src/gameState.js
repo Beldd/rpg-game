@@ -28,7 +28,7 @@ function createDefaultParty() {
   // controls names, base stats, and spell lists. Falls back to hardcoded
   // defaults if EditorData isn't available (e.g. Node.js test context).
   if (typeof EditorData !== 'undefined') {
-    return EditorData.getCharacters().map(charDef => ({
+    return EditorData.getCharacters().map((charDef, i) => ({
       name: charDef.name,
       hp: charDef.startingHp,
       maxHp: charDef.startingHp,
@@ -40,6 +40,9 @@ function createDefaultParty() {
       spells: charDef.spells.map(s => ({ ...s })),
       equipment: { primary: null, secondary: null, body: null, head: null },
       activeDebuffs: [], // cleared on battle end, never persisted to saves
+      // Front row = slots 0–1, back row = slots 2–4. Front row deals
+      // and receives full damage; back row deals/receives 50%.
+      row: i < 2 ? 'front' : 'back',
     }));
   }
 
@@ -57,6 +60,7 @@ function createDefaultParty() {
       ],
       equipment: { primary: null, secondary: null, body: null, head: null },
       activeDebuffs: [],
+      row: 'front',
     },
     {
       name: 'Ally', hp: 24, maxHp: 24, mp: 12, maxMp: 12,
@@ -68,6 +72,7 @@ function createDefaultParty() {
       ],
       equipment: { primary: null, secondary: null, body: null, head: null },
       activeDebuffs: [],
+      row: 'front',
     },
   ];
 }

@@ -77,6 +77,16 @@ class MapScene extends Phaser.Scene {
     this.saveLoadMode = 'SAVE';
     this.saveLoadSelectedIndex = 0;
     this.pendingLoadConfirm = null;
+
+    // ── Random encounter state ───────────────────────────────────────
+    // Tile bag: 15 tokens, 1 = encounter, 14 = safe. Drawn one per step;
+    // reshuffled when empty. Produces ~15 steps per encounter on average
+    // without the high variance of pure per-step RNG.
+    this._encounterBag    = [];
+    this._encounterBagIdx = 0;
+    // Which zone the player is currently in — controls which encounter
+    // table to draw from (or disables random encounters entirely).
+    this._currentZone = 'town';
   }
 
   preload() {
@@ -253,6 +263,95 @@ class MapScene extends Phaser.Scene {
     console.log(`Map loaded: ${map.width}x${map.height} tiles`);
   }
 
+  // ─── Random encounter helpers ────────────────────────────────────────────
+
+  /**
+   * Returns the zone id for a given tile coordinate. Town is defined
+   * as the rectangular region covering the starting village area;
+   * everything else is overworld. DungeonScene sets _currentZone to
+   * 'dungeon' before triggering its own random encounters.
+   *
+   * Town boundary: tiles (0,0)–(44,23) — roughly the walled village
+   * plus some surrounding grass buffer. Adjust as the map grows.
+   */
+  _getZoneForTile(tileX, tileY) {
+    if (tileX <= 44 && tileY <= 23) return 'town';
+    return 'overworld';
+  }
+
+  /**
+   * Fills the tile bag with 15 tokens (1 encounter, 14 safe) and
+   * shuffles them randomly using Fisher-Yates. Called once when the
+   * bag is empty to reshuffle.
+   */
+  _refillEncounterBag() {
+    // 1 encounter token per bag of 15 = ~15 steps average between fights
+    this._encounterBag = [true, ...Array(14).fill(false)];
+    for (let i = this._encounterBag.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [this._encounterBag[i], this._encounterBag[j]] = [this._encounterBag[j], this._encounterBag[i]];
+    }
+    this._encounterBagIdx = 0;
+  }
+
+  /**
+   * Draws one token from the bag. Returns true if this step triggers
+   * a random encounter, false otherwise. Reshuffles the bag
+   * automatically when all tokens have been drawn.
+   */
+  _drawEncounterToken() {
+    if (this._encounterBagIdx >= this._encounterBag.length) {
+      this._refillEncounterBag();
+    }
+    return this._encounterBag[this._encounterBagIdx++];
+  }
+
+  /**
+   * Called on each completed step. Checks the current zone, draws a
+   * token if encounters are enabled, and triggers a random encounter
+   * if the token says so. Returns true if an encounter was started.
+   */
+  _checkRandomEncounter(tileX, tileY) {
+    const zoneId = this._getZoneForTile(tileX, tileY);
+    this._currentZone = zoneId;
+
+    const encounterIds = EditorData.getRandomEncounterIds(zoneId);
+    if (!encounterIds.length) return false; // zone has no random encounters
+
+    if (!this._drawEncounterToken()) return false; // safe step
+
+    // Pick a random encounter from this zone's table
+    const encId = encounterIds[Math.floor(Math.random() * encounterIds.length)];
+    this.activeEncounterId = encId;
+    this._triggerRandomEncounter();
+    return true;
+  }
+
+  _triggerRandomEncounter() {
+    if (this.encounterTriggered) return;
+    this.encounterTriggered = true;
+
+    if (GameState.party.every(m => m.hp <= 0)) {
+      this.cameras.main.fadeOut(400, 0, 0, 0);
+      domText.fadeOut();
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        domText.clearAll();
+        this.scene.start('GameOverScene');
+      });
+      return;
+    }
+
+    this.cameras.main.fadeOut(400, 0, 0, 0);
+    domText.fadeOut();
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      domText.clearAll();
+      this.scene.start('BattleScene', {
+        encounterId: this.activeEncounterId,
+        returnScene: 'MapScene',
+      });
+    });
+  }
+
   /**
    * Returns true if the given tile coordinate is outside the map
    * bounds or contains a tile we've marked as blocked.
@@ -321,6 +420,12 @@ class MapScene extends Phaser.Scene {
       duration: 150,
       onComplete: () => {
         this.isMoving = false;
+        // Check for a random encounter now that the step is complete.
+        // Static encounters are checked above (before movement) and
+        // handled separately; this is for zone-based random fights.
+        if (!this.encounterTriggered) {
+          this._checkRandomEncounter(this.playerTileX, this.playerTileY);
+        }
       },
     });
   }
@@ -583,6 +688,13 @@ class MapScene extends Phaser.Scene {
       if (isSwapSource) { this._blinkEl = nameEl; }
       this.overlayEls.push(nameEl);
 
+      // Row indicator [F] / [B]
+      const rowLabel = (member.row || 'front') === 'front' ? '[F]' : '[B]';
+      const rowColor = (member.row || 'front') === 'front' ? '#88cc88' : '#8888cc';
+      this.overlayEls.push(
+        domText.menu(RX + 110, y + 2, rowLabel, { fontSize: 10, color: rowColor, align: 'left' })
+      );
+
       // HP
       const hpColor = member.hp / member.maxHp > 0.4 ? '#33cc66' : '#cc4444';
       this.overlayEls.push(
@@ -611,8 +723,8 @@ class MapScene extends Phaser.Scene {
     // Hint line at bottom of party panel — pushed below last row dynamically
     const partyHintY = Math.max(120, startY + GameState.party.length * rowH + 8);
     const partyHint = this.partySwapSource !== null
-      ? '↑↓ select target  Enter swap  Esc cancel'
-      : '↑↓ browse  Enter select to swap';
+      ? '↑↓ select  Enter swap / same=row toggle  Esc cancel'
+      : '↑↓ browse  Enter select  (same char toggles row)';
     this.overlayEls.push(
       domText.menu(RX, partyHintY, partyHint, { fontSize: 7, color: '#7788aa', align: 'left' })
     );
@@ -1236,7 +1348,9 @@ class MapScene extends Phaser.Scene {
             this.renderOverlay();
             this._startSwapBlink();
           } else if (this.partySwapSource === this.partySelectedIndex) {
-            // Confirmed on same character — cancel
+            // Confirmed on same character — toggle front/back row
+            const member = GameState.party[this.partySwapSource];
+            member.row = (member.row === 'front') ? 'back' : 'front';
             this.partySwapSource = null;
             this.renderOverlay();
           } else {

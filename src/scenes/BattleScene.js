@@ -104,6 +104,7 @@ class BattleScene extends Phaser.Scene {
     this.partyRowHighlights = [];
     this.partyNameTexts     = [];
     this.partySprites       = [];
+    this.partyRowTexts      = []; // [F] / [B] indicators
 
     this.party.forEach((member, i) => {
       const rowY   = midZoneTop + i * rowH;
@@ -125,6 +126,13 @@ class BattleScene extends Phaser.Scene {
       const nameTxt = domText.create(nameBarX, nameY, member.name,
         { fontSize: 9, color: '#ffffff', align: 'left' });
       this.partyNameTexts.push(nameTxt);
+
+      // Row indicator [F] = front, [B] = back
+      const rowLabel = (member.row || 'front') === 'front' ? '[F]' : '[B]';
+      const rowColor = (member.row || 'front') === 'front' ? '#aaddaa' : '#aaaadd';
+      const rowTxt = domText.create(nameBarX + 56, nameY, rowLabel,
+        { fontSize: 8, color: rowColor, align: 'left' });
+      this.partyRowTexts.push(rowTxt);
 
       // HP bar
       this.add.rectangle(nameBarX, hpBarY, barW, 5, 0x222233).setOrigin(0, 0.5);
@@ -262,6 +270,17 @@ class BattleScene extends Phaser.Scene {
     });
   }
 
+  /** Refreshes the [F]/[B] label for one party member after a row change. */
+  _updateRowLabel(index) {
+    const member = this.party[index];
+    const el = this.partyRowTexts[index];
+    if (!member || !el) return;
+    const label = (member.row || 'front') === 'front' ? '[F]' : '[B]';
+    const color = (member.row || 'front') === 'front' ? '#aaddaa' : '#aaaadd';
+    domText.setText(el, label);
+    el.style.color = color;
+  }
+
   // ── INPUT PHASE ──────────────────────────────────────────────────────────────
 
   currentInputMember() { return this.party[this.currentInputIndex]; }
@@ -343,11 +362,21 @@ class BattleScene extends Phaser.Scene {
   executePartyAction(member, action, next) {
     const memberIndex = this.party.indexOf(member);
 
-    if (action.type === 'attack') {
+    if (action.type === 'change_row') {
+      member.row = (member.row === 'front') ? 'back' : 'front';
+      domText.setText(this.messageTextEl,
+        `${member.name} moves to the ${member.row} row!`);
+      // Update the row indicator label immediately
+      this._updateRowLabel(memberIndex);
+      this.time.delayedCall(600, next);
+
+    } else if (action.type === 'attack') {
       // Attacker blinks white, then deal damage and blink enemy red.
       this.blinkPartyMember(memberIndex, 0xffffff, '#ffffff').then(() => {
         const stats = GameState.getEffectiveStats(member);
-        const raw   = this.randomInRange(stats.attackMin, stats.attackMax);
+        let raw = this.randomInRange(stats.attackMin, stats.attackMax);
+        // Back-row attacker deals 50% damage on basic attacks.
+        if (member.row === 'back') raw = Math.max(1, Math.floor(raw * 0.5));
         const result = this.dealDamageToEnemy(raw);
         this.updateBars();
         domText.setText(this.messageTextEl,
@@ -499,6 +528,8 @@ class BattleScene extends Phaser.Scene {
       const mul = params.damageMultiplier || 1.0;
       let dmg   = Math.round(this.randomInRange(es.attackMin, es.attackMax) * mul);
       if (target.defending) dmg = Math.floor(dmg / 2);
+      // Back-row defender takes 50% damage from basic enemy attacks.
+      if (target.row === 'back') dmg = Math.max(1, Math.floor(dmg * 0.5));
       dmg = Math.max(1, dmg - ts.defense);
       target.hp = Math.max(0, target.hp - dmg);
       this.updateBars();
@@ -527,6 +558,7 @@ class BattleScene extends Phaser.Scene {
       const es  = this.getEnemyEffectiveStats();
       let dmg   = Math.round(this.randomInRange(es.attackMin, es.attackMax) * (params.damageMultiplier || 1.0));
       if (target.defending) dmg = Math.floor(dmg / 2);
+      if (target.row === 'back') dmg = Math.max(1, Math.floor(dmg * 0.5));
       dmg = Math.max(1, dmg - ts.defense);
       target.hp = Math.max(0, target.hp - dmg);
       const heal = Math.round(dmg * (params.selfHealPercent || 0.2));
@@ -679,11 +711,14 @@ class BattleScene extends Phaser.Scene {
 
   openMainMenu() {
     this.menuStack = [];
+    const member = this.currentInputMember();
+    const rowLabel = (member && member.row === 'back') ? 'Row [B→F]' : 'Row [F→B]';
     this.renderMenu([
-      { label: 'Attack', action: () => this.queueAction({ type: 'attack' }) },
-      { label: 'Magic',  action: () => this.openSpellMenu() },
-      { label: 'Defend', action: () => this.queueAction({ type: 'defend' }) },
-      { label: 'Flee',   action: () => this.queueAction({ type: 'flee' }) },
+      { label: 'Attack',  action: () => this.queueAction({ type: 'attack' }) },
+      { label: 'Magic',   action: () => this.openSpellMenu() },
+      { label: 'Defend',  action: () => this.queueAction({ type: 'defend' }) },
+      { label: rowLabel,  action: () => this.queueAction({ type: 'change_row' }) },
+      { label: 'Flee',    action: () => this.queueAction({ type: 'flee' }) },
     ]);
   }
 

@@ -104,6 +104,37 @@ const EditorData = {
       { id: 'kippah_01',  name: 'Kippah',  slot: 'head',      startingOwned: true, bonus: [{ stat: 'defense', amount: 2 }] },
     ],
 
+    /**
+     * Zone definitions. Each zone controls whether random encounters
+     * are enabled for that region, and which encounter table to draw
+     * from when they are.
+     *
+     * randomEncounters: array of encounter ids that can be drawn from
+     *   the bag. An empty array with enabled:true would be valid but
+     *   would silently never trigger anything — keep at least one entry.
+     * enabled: false means the tile bag never advances (safe zone).
+     */
+    zones: [
+      {
+        id: 'town',
+        name: 'Town',
+        enabled: false,
+        randomEncounters: [],
+      },
+      {
+        id: 'overworld',
+        name: 'Overworld',
+        enabled: true,
+        randomEncounters: ['slime_01'],
+      },
+      {
+        id: 'dungeon',
+        name: 'Dungeon',
+        enabled: true,
+        randomEncounters: ['slime_01'],
+      },
+    ],
+
     characters: [
       {
         id: 'hero_01',
@@ -170,6 +201,7 @@ const EditorData = {
       this._migrateConsumables(stored);
       this._migrateEquipment(stored);
       this._migrateCharacters(stored);
+      this._migrateZones(stored);
       return stored;
     } catch (err) {
       console.error('EditorData.load failed, returning defaults:', err);
@@ -215,6 +247,19 @@ const EditorData = {
     this.defaults.equipment.forEach(defaultItem => {
       if (!existingIds.has(defaultItem.id)) {
         data.equipment.push(JSON.parse(JSON.stringify(defaultItem)));
+      }
+    });
+  },
+
+  _migrateZones(data) {
+    if (!data.zones) {
+      data.zones = JSON.parse(JSON.stringify(this.defaults.zones));
+      return;
+    }
+    const existingIds = new Set(data.zones.map(z => z.id));
+    this.defaults.zones.forEach(defaultZone => {
+      if (!existingIds.has(defaultZone.id)) {
+        data.zones.push(JSON.parse(JSON.stringify(defaultZone)));
       }
     });
   },
@@ -329,6 +374,31 @@ const EditorData = {
   getCharacter(id) {
     const data = this.load();
     return (data.characters || []).find(c => c.id === id) || null;
+  },
+
+  getZone(id) {
+    const data = this.load();
+    return (data.zones || []).find(z => z.id === id) || null;
+  },
+
+  /**
+   * Returns the array of encounter ids for random encounters in the
+   * given zone, or an empty array if the zone is disabled or not found.
+   */
+  getRandomEncounterIds(zoneId) {
+    const zone = this.getZone(zoneId);
+    if (!zone || !zone.enabled) return [];
+    return zone.randomEncounters || [];
+  },
+
+  /**
+   * Returns a random encounter id from the given zone's table, or null
+   * if the zone has no random encounters configured.
+   */
+  pickRandomEncounterId(zoneId) {
+    const ids = this.getRandomEncounterIds(zoneId);
+    if (!ids.length) return null;
+    return ids[Math.floor(Math.random() * ids.length)];
   },
 
   selectAbility(abilities) {

@@ -82,6 +82,16 @@ const SaveSystem = {
 
     GameState.party = snapshot.party;
     GameState.inventory = snapshot.inventory;
+
+    // Forward-migration: add row field to party members saved before
+    // front/back row was added. Preserve existing row values if present
+    // (player may have changed them); only fill in the default when absent.
+    GameState.party.forEach((member, i) => {
+      if (member.row === undefined) {
+        member.row = i < 2 ? 'front' : 'back';
+      }
+    });
+
     return true;
   },
 
