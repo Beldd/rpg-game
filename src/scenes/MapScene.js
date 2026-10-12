@@ -94,6 +94,13 @@ class MapScene extends Phaser.Scene {
     // 1. The Kenney tiny_dungeon packed tileset (192×176, 12×11, no spacing)
     this.load.image('tiles', 'assets/kenny/tiny_dungeon/Tilemap/tilemap_packed.png');
 
+    // Also load the same sheet as a spritesheet so individual tiles can be
+    // used as NPC/character sprites via frame index. 16×16 tiles, no margin
+    // or spacing — matches the tilemap_packed layout exactly.
+    this.load.spritesheet('characters', 'assets/kenny/tiny_dungeon/Tilemap/tilemap_packed.png', {
+      frameWidth: 16, frameHeight: 16,
+    });
+
     // 2. The map JSON describing which tile goes where
     //    'tilemapTiledJSON' tells Phaser to parse it as Tiled-format data
     this.load.tilemapTiledJSON('map', 'assets/map.json');
@@ -193,6 +200,19 @@ class MapScene extends Phaser.Scene {
     // Guard flag so we don't trigger the battle transition more than
     // once if update() fires again before the scene actually switches.
     this.encounterTriggered = false;
+
+    // --- Dungeon reset NPC (wizard) ---
+    // Tile (35, 21): one tile east of the dungeon door exit, same row as
+    // where the player lands after leaving the dungeon. Frame 84 = column 0,
+    // row 7 on the 12×11 tilemap_packed spritesheet (purple-robed wizard).
+    // NPC_TILE is the wizard's own tile — interaction fires when the player
+    // is on any of the 8 surrounding tiles and presses Enter.
+    this.NPC_TILE = { x: 35, y: 21 };
+    this.npcSprite = this.add.image(
+      this.NPC_TILE.x * this.TILE_SIZE + this.TILE_SIZE / 2,
+      this.NPC_TILE.y * this.TILE_SIZE + this.TILE_SIZE / 2,
+      'characters', 84
+    );
 
     // --- Dialogue box UI ---
     // Built once here, hidden by default, and shown/repositioned by
@@ -1248,6 +1268,43 @@ class MapScene extends Phaser.Scene {
     this.encounterTriggered = false;
   }
 
+  // ─── NPC interaction ──────────────────────────────────────────────────────
+
+  /**
+   * Returns true if the player is on any of the 8 tiles adjacent to the
+   * wizard NPC. Called each frame when Enter is pressed and no dialogue
+   * is open, so the player doesn't need to be facing a specific direction.
+   */
+  _isAdjacentToNpc() {
+    const dx = Math.abs(this.playerTileX - this.NPC_TILE.x);
+    const dy = Math.abs(this.playerTileY - this.NPC_TILE.y);
+    return dx <= 1 && dy <= 1 && (dx + dy > 0); // within 1 tile in any direction, not on the NPC itself
+  }
+
+  /**
+   * Opens the dungeon-reset dialogue. First step is a Yes/No choice;
+   * each branch resolves to a single dismissable message.
+   */
+  openNpcDialogue() {
+    this.openChoiceDialogue('Reset the dungeon?', [
+      {
+        label: 'Yes',
+        action: () => {
+          GameState.resetDungeon();
+          this.closeDialogue();
+          this.showMessageDialogue('The dungeon has been reset.');
+        },
+      },
+      {
+        label: 'No',
+        action: () => {
+          this.closeDialogue();
+          this.showMessageDialogue('Talk to me again if you change your mind.');
+        },
+      },
+    ]);
+  }
+
   update() {
     // Dialogue (e.g. a Load confirmation opened from within the
     // Save/Load overlay view) takes priority over the overlay itself.
@@ -1469,6 +1526,14 @@ class MapScene extends Phaser.Scene {
         || Phaser.Input.Keyboard.JustDown(this.overlayKeyI)) {
       this.openOverlay();
       return;
+    }
+
+    // Enter while adjacent to the wizard NPC opens the dungeon-reset dialogue.
+    if (Phaser.Input.Keyboard.JustDown(this.enterKey) && !this.isMoving && !this.encounterTriggered) {
+      if (this._isAdjacentToNpc()) {
+        this.openNpcDialogue();
+        return;
+      }
     }
 
     // Phaser calls update() every frame. We check arrow key state and

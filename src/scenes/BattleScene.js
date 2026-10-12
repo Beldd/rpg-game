@@ -19,6 +19,11 @@ class BattleScene extends Phaser.Scene {
     // Which scene to return to after the battle. Defaults to MapScene so
     // existing code paths (and any direct calls without returnScene) still work.
     this.returnScene  = (data && data.returnScene)  ? data.returnScene  : 'MapScene';
+    // Arbitrary data blob passed back to the return scene after battle.
+    // Used by DungeonScene to restore the player's position and know whether
+    // to remove a defeated static encounter. Shape is return-scene-defined;
+    // BattleScene just ferries it through.
+    this.returnData   = (data && data.returnData)   ? data.returnData   : null;
   }
 
   create() {
@@ -674,7 +679,7 @@ class BattleScene extends Phaser.Scene {
       this.time.delayedCall(next, () => domText.setText(this.messageTextEl, msg));
       next += 1800;
     });
-    this.time.delayedCall(next, () => this.returnToMap());
+    this.time.delayedCall(next, () => this.returnToMap(true));
   }
 
   // ── MENU SYSTEM ───────────────────────────────────────────────────────────────
@@ -788,13 +793,17 @@ class BattleScene extends Phaser.Scene {
 
   // ── NAVIGATION ────────────────────────────────────────────────────────────────
 
-  returnToMap() {
+  returnToMap(victory = false) {
     this.party.forEach(m => { m.activeDebuffs = []; });
     this.cameras.main.fadeOut(400, 0, 0, 0);
     domText.fadeOut();
     this.cameras.main.once('camerafadeoutcomplete', () => {
       domText.clearAll();
-      this.scene.start(this.returnScene);
+      // Merge victory flag into returnData so the return scene can act on it.
+      // returnData is null for MapScene returns (which don't need spawn info),
+      // and populated by DungeonScene for both static and random encounters.
+      const sceneData = this.returnData ? { ...this.returnData, victory } : null;
+      this.scene.start(this.returnScene, sceneData ? { returnData: sceneData } : undefined);
     });
   }
 }

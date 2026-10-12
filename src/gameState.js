@@ -120,6 +120,22 @@ const GameState = {
   party: createDefaultParty(),
   inventory: createDefaultInventory(),
 
+  /**
+   * Tracks which static dungeon encounters the player has defeated in the
+   * current dungeon "run". Stored here (not on DungeonScene) so it survives
+   * the scene being destroyed and recreated on re-entry after a battle.
+   * Cleared by resetDungeon() when the player talks to the reset NPC.
+   */
+  dungeonDefeatedIds: new Set(),
+
+  /**
+   * Clears all defeated encounter records, making every static encounter
+   * reappear on the next dungeon visit. Called by the reset NPC in MapScene.
+   */
+  resetDungeon() {
+    this.dungeonDefeatedIds = new Set();
+  },
+
   // Templates for what battle victories can drop — NOT live inventory
   // items. Each entry here is a fresh blueprint; dropping one creates
   // a brand new item object (see rollForDrop), never a reference to

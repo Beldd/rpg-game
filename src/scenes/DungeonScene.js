@@ -86,39 +86,73 @@ class DungeonScene extends Phaser.Scene {
     this.groundLayer = map.createLayer('ground', tileset, 0, 0);
     this.map = map;
 
+    // --- Return data (from BattleScene) ---
+    // When returning from a battle, BattleScene passes back a returnData
+    // object with the tile the player was on when the encounter triggered,
+    // plus whether it was a victory and (for static encounters) which
+    // encounter was defeated. We use this to restore position and hide
+    // defeated static encounter sprites.
+    const sceneData  = this.scene.settings.data || {};
+    const returnData = sceneData.returnData || null;
+
+    // If returning from a static encounter victory, record it as defeated
+    // so it stays hidden for the rest of this dungeon run.
+    if (returnData && returnData.victory && returnData.isStaticEncounter) {
+      GameState.dungeonDefeatedIds.add(returnData.encounterId);
+    }
+
     // --- Player spawn ---
-    // Place the player just inside the entrance vestibule (below the
-    // north-wall door gap, which is the exit back to town).
-    const startTileX = 14;
-    const startTileY = 3;
+    // Default: entrance vestibule just inside the north-wall door gap.
+    // Override with the tile stored in returnData when returning from any
+    // battle (random or static) — this puts the player back where the fight
+    // started rather than resetting them to the entrance every time.
+    // Exception: static encounter LOSS — return to entrance so the player
+    // can re-equip/heal before trying again; sprite persists (no defeat record).
+    const defaultSpawnX = 14;
+    const defaultSpawnY = 3;
+    let spawnX = defaultSpawnX;
+    let spawnY = defaultSpawnY;
+    if (returnData && returnData.spawnTileX !== undefined) {
+      // Use the saved position for victories and random encounter losses.
+      // For static encounter losses (victory=false, isStaticEncounter=true),
+      // reset to entrance so the player isn't immediately re-challenged.
+      const isStaticLoss = returnData.isStaticEncounter && !returnData.victory;
+      if (!isStaticLoss) {
+        spawnX = returnData.spawnTileX;
+        spawnY = returnData.spawnTileY;
+      }
+    }
+
     this.player = this.add.image(
-      startTileX * this.TILE_SIZE + this.TILE_SIZE / 2,
-      startTileY * this.TILE_SIZE + this.TILE_SIZE / 2,
+      spawnX * this.TILE_SIZE + this.TILE_SIZE / 2,
+      spawnY * this.TILE_SIZE + this.TILE_SIZE / 2,
       'player'
     );
-    this.playerTileX = startTileX;
-    this.playerTileY = startTileY;
+    this.playerTileX = spawnX;
+    this.playerTileY = spawnY;
 
     // --- Camera ---
     this.cameras.main.startFollow(this.player, true, 0.15, 0.15);
     this.cameras.main.setBounds(0, 0, map.widthInPixels, map.heightInPixels);
 
     // --- Encounters ---
-    // Only load encounters whose mapPosition falls inside the dungeon
-    // map bounds — the editor stores a single position per encounter,
-    // so the same slime definition drives a dungeon encounter here.
+    // Build static encounter list. Encounters already in GameState.dungeonDefeatedIds
+    // are spawned with their sprite hidden (defeated this run) so the player can't
+    // re-trigger them until the dungeon is reset.
     this.staticEncounters = EditorData.getStaticEncounters().map(enc => {
-      // Prefer dungeonPosition if defined, fall back to mapPosition.
       const pos = enc.dungeonPosition || enc.mapPosition;
+      const defeated = GameState.dungeonDefeatedIds.has(enc.id);
+      const sprite = this.add.image(
+        pos.tileX * this.TILE_SIZE + this.TILE_SIZE / 2,
+        pos.tileY * this.TILE_SIZE + this.TILE_SIZE / 2,
+        'enemy'
+      ).setVisible(!defeated);
       return {
         id: enc.id,
         tileX: pos.tileX,
         tileY: pos.tileY,
-        sprite: this.add.image(
-          pos.tileX * this.TILE_SIZE + this.TILE_SIZE / 2,
-          pos.tileY * this.TILE_SIZE + this.TILE_SIZE / 2,
-          'enemy'
-        ),
+        sprite,
+        defeated,
       };
     });
 
@@ -211,6 +245,11 @@ class DungeonScene extends Phaser.Scene {
       return;
     }
 
+    // Capture current tile BEFORE the scene transitions — this is where
+    // the player will reappear after the random encounter resolves.
+    const spawnX = this.playerTileX;
+    const spawnY = this.playerTileY;
+
     this.cameras.main.fadeOut(400, 0, 0, 0);
     domText.fadeOut();
     this.cameras.main.once('camerafadeoutcomplete', () => {
@@ -218,6 +257,11 @@ class DungeonScene extends Phaser.Scene {
       this.scene.start('BattleScene', {
         encounterId: this.activeEncounterId,
         returnScene: 'DungeonScene',
+        returnData: {
+          spawnTileX: spawnX,
+          spawnTileY: spawnY,
+          isStaticEncounter: false,
+        },
       });
     });
   }
@@ -238,12 +282,15 @@ class DungeonScene extends Phaser.Scene {
       return;
     }
 
-    // Check encounters
+    // Check encounters — skip any that have already been defeated this run.
     const hitEncounter = this.staticEncounters.find(
-      enc => enc.tileX === targetTileX && enc.tileY === targetTileY
+      enc => !enc.defeated && enc.tileX === targetTileX && enc.tileY === targetTileY
     );
     if (hitEncounter) {
       this.activeEncounterId = hitEncounter.id;
+      // Store the tile the player is stepping FROM (current position before
+      // the move commits) as the spawn-back point after the battle.
+      this._pendingSpawnTile = { x: this.playerTileX, y: this.playerTileY };
       this.startEncounter();
       return;
     }
@@ -329,11 +376,16 @@ class DungeonScene extends Phaser.Scene {
     this.cameras.main.fadeOut(400, 0, 0, 0);
     domText.fadeOut();
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      // Pass 'DungeonScene' as the returnScene so BattleScene knows
-      // where to go after the battle ends.
+      const spawn = this._pendingSpawnTile || { x: 14, y: 3 };
       this.scene.start('BattleScene', {
         encounterId: this.activeEncounterId,
         returnScene: 'DungeonScene',
+        returnData: {
+          spawnTileX: spawn.x,
+          spawnTileY: spawn.y,
+          encounterId: this.activeEncounterId,
+          isStaticEncounter: true,
+        },
       });
     });
   }
