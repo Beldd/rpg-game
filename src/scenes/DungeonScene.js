@@ -93,7 +93,15 @@ class DungeonScene extends Phaser.Scene {
     // encounter was defeated. We use this to restore position and hide
     // defeated static encounter sprites.
     const sceneData  = this.scene.settings.data || {};
-    const returnData = sceneData.returnData || null;
+
+    // Only trust returnData that genuinely came from BattleScene this
+    // transition. BattleScene always merges a `victory` boolean into the
+    // data it passes back; a fresh entry from MapScene (or stale settings
+    // data from a previous visit) will never have that field. Without this
+    // guard, Phaser's scene.settings.data persistence causes old battle
+    // results to re-apply on every subsequent dungeon entry.
+    const rawReturn  = sceneData.returnData || null;
+    const returnData = (rawReturn && typeof rawReturn.victory === 'boolean') ? rawReturn : null;
 
     // If returning from a static encounter victory, record it as defeated
     // so it stays hidden for the rest of this dungeon run.
@@ -182,6 +190,19 @@ class DungeonScene extends Phaser.Scene {
     // --- Input ---
     this.cursors = this.input.keyboard.createCursorKeys();
     this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+    // P / I open the inventory/status overlay (Save is disabled mid-dungeon)
+    this.overlayKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.P);
+    this.overlayKeyI = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
+
+    // After a Load performed in OverlayScene, fade the camera so state updates cleanly.
+    this.game.events.once('overlayLoadComplete', () => {
+      this.cameras.main.fadeOut(400, 0, 0, 0);
+      domText.fadeOut();
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        this.cameras.main.fadeIn(400, 0, 0, 0);
+        domText.fadeIn();
+      });
+    });
 
     // Fade in from black on entry
     this.cameras.main.fadeIn(400, 0, 0, 0);
@@ -438,6 +459,18 @@ class DungeonScene extends Phaser.Scene {
   // ─── Update loop ─────────────────────────────────────────────────────────
 
   update() {
+    // P / I open the overlay (Save disabled mid-dungeon).
+    if (Phaser.Input.Keyboard.JustDown(this.overlayKey)
+        || Phaser.Input.Keyboard.JustDown(this.overlayKeyI)) {
+      if (!this.scene.isActive('OverlayScene')) {
+        this.scene.launch('OverlayScene', { callerKey: 'DungeonScene', disableSave: true });
+      }
+      return;
+    }
+
+    // While OverlayScene is active on top, suppress all dungeon input.
+    if (this.scene.isActive('OverlayScene')) return;
+
     if (this.dialogueState === 'CHOICE') {
       if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
         this.dialogueSelectedIndex = Math.max(0, this.dialogueSelectedIndex - 1);

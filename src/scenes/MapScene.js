@@ -280,6 +280,18 @@ class MapScene extends Phaser.Scene {
     this.escKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ESC);
     this.spaceKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
+    // Listen for a successful Load performed inside OverlayScene.
+    // After a load, fade the camera out and back in so state changes
+    // (party HP, inventory, etc.) are picked up cleanly on fade-in.
+    this.game.events.once('overlayLoadComplete', () => {
+      this.cameras.main.fadeOut(400, 0, 0, 0);
+      domText.fadeOut();
+      this.cameras.main.once('camerafadeoutcomplete', () => {
+        this.cameras.main.fadeIn(400, 0, 0, 0);
+        domText.fadeIn();
+      });
+    });
+
     console.log(`Map loaded: ${map.width}x${map.height} tiles`);
   }
 
@@ -1199,7 +1211,13 @@ class MapScene extends Phaser.Scene {
     domText.fadeOut();
     this.cameras.main.once('camerafadeoutcomplete', () => {
       domText.clearAll();
-      this.scene.start('DungeonScene');
+      // Pass an explicit empty object so Phaser clears any stale
+      // scene.settings.data from a previous dungeon visit. Without this,
+      // the old battle returnData (victory=true, spawnTileX/Y, etc.)
+      // persists in settings and causes DungeonScene to re-apply it on
+      // every subsequent entry — hiding defeated enemies even after a
+      // reset, and spawning the player at the old encounter tile.
+      this.scene.start('DungeonScene', { fromMap: true });
     });
   }
 
@@ -1332,8 +1350,13 @@ class MapScene extends Phaser.Scene {
       return;
     }
 
-    // The overlay takes top priority over normal movement — if it's open
-    // (and no dialogue is, per the checks above), it owns all input.
+    // While OverlayScene is running on top of us, suppress all map movement
+    // and interaction input — OverlayScene owns the keyboard at that point.
+    if (this.scene.isActive('OverlayScene')) return;
+
+    // Legacy overlay block — overlayOpen is never true via the new OverlayScene
+    // path, so this block is dead code kept only to avoid a JS error if somehow
+    // reached. It will be cleaned up in a future refactor.
     if (this.overlayOpen) {
       const jdUp    = Phaser.Input.Keyboard.JustDown(this.cursors.up);
       const jdDown  = Phaser.Input.Keyboard.JustDown(this.cursors.down);
@@ -1521,10 +1544,13 @@ class MapScene extends Phaser.Scene {
       return; // unknown sub-state — consume input to avoid leaking to movement
     }
 
-    // P or I opens the overlay from normal movement state.
+    // P or I opens the inventory/status overlay.
+    // Launch OverlayScene on top of MapScene so the map stays running underneath.
     if (Phaser.Input.Keyboard.JustDown(this.overlayKey)
         || Phaser.Input.Keyboard.JustDown(this.overlayKeyI)) {
-      this.openOverlay();
+      if (!this.scene.isActive('OverlayScene')) {
+        this.scene.launch('OverlayScene', { callerKey: 'MapScene' });
+      }
       return;
     }
 
