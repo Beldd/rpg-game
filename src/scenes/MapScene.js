@@ -63,7 +63,6 @@ class MapScene extends Phaser.Scene {
     // Party sub-state
     this.partySelectedIndex = 0;
     this.partySwapSource = null;  // index of the character "picked up" for swapping, null if none
-    this._partyBlinkInterval = null; // setInterval handle for the swap-source blink
 
     // Equip sub-state
     this.equipCharIndex = 0;
@@ -635,24 +634,14 @@ class MapScene extends Phaser.Scene {
     });
   }
 
-  /** Starts the blink interval for the swap-source name element. */
+  /** Applies the CSS blink animation to the swap-source name element. */
   _startSwapBlink() {
-    this._stopSwapBlink();
-    let visible = true;
-    this._partyBlinkInterval = setInterval(() => {
-      if (this._blinkEl) {
-        this._blinkEl.style.opacity = visible ? '0' : '1';
-        visible = !visible;
-      }
-    }, 350);
+    if (this._blinkEl) this._blinkEl.classList.add('swap-blink');
   }
 
-  /** Stops and clears the blink interval. */
+  /** Removes the CSS blink animation (no-op if element already gone). */
   _stopSwapBlink() {
-    if (this._partyBlinkInterval) {
-      clearInterval(this._partyBlinkInterval);
-      this._partyBlinkInterval = null;
-    }
+    if (this._blinkEl) this._blinkEl.classList.remove('swap-blink');
     this._blinkEl = null;
   }
 
@@ -848,13 +837,14 @@ class MapScene extends Phaser.Scene {
       );
     });
 
+    const itemsHintY = Math.max(120, startY + consumables.length * rowH + 8);
     if (this.overlaySubState !== 'ITEMS_SELECT') {
       this.overlayEls.push(
-        domText.menu(RX, 120, 'Enter to use', { fontSize: 7, color: '#7788aa', align: 'left' })
+        domText.menu(RX, itemsHintY, 'Enter to use', { fontSize: 7, color: '#7788aa', align: 'left' })
       );
     } else {
       this.overlayEls.push(
-        domText.menu(RX, 120, '↑↓ select  Enter use', { fontSize: 7, color: '#7788aa', align: 'left' })
+        domText.menu(RX, itemsHintY, '↑↓ select  Enter use', { fontSize: 7, color: '#7788aa', align: 'left' })
       );
     }
   }
@@ -886,8 +876,9 @@ class MapScene extends Phaser.Scene {
       );
     });
 
+    const targetHintY = Math.max(120, startY + GameState.party.length * rowH + 8);
     this.overlayEls.push(
-      domText.menu(RX, 120, '↑↓ select  Enter confirm  Esc cancel', { fontSize: 7, color: '#7788aa', align: 'left' })
+      domText.menu(RX, targetHintY, '↑↓ select  Enter confirm  Esc cancel', { fontSize: 7, color: '#7788aa', align: 'left' })
     );
   }
 

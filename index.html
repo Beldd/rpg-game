@@ -76,42 +76,50 @@
          using before. */
       transform: translate(-50%, -50%);
     }
+
+    /* Blink animation for the party-swap selected character name */
+    @keyframes swap-blink {
+      0%, 49% { opacity: 1; }
+      50%, 100% { opacity: 0; }
+    }
+    .swap-blink {
+      animation: swap-blink 0.6s step-start infinite;
+    }
   </style>
 </head>
 <body>
-    <div id="game-wrapper">
-        <!-- Phaser will inject a <canvas> into this div -->
-        <div id="game-container"></div>
-        <!-- Crisp HTML text renders here, positioned to line up with the canvas -->
-        <div id="text-overlay"></div>
-        <!-- Menu/overlay UI text renders here — above world text so the panel occludes it -->
-        <div id="menu-overlay"></div>
-    </div>
+  <div id="game-wrapper">
+    <!-- Phaser will inject a <canvas> into this div -->
+    <div id="game-container"></div>
+    <!-- Crisp HTML text renders here, positioned to line up with the canvas -->
+    <div id="text-overlay"></div>
+    <!-- Menu/overlay UI text renders here — above world text so the panel occludes it -->
+    <div id="menu-overlay"></div>
+  </div>
 
-    <!-- Load Phaser itself from a CDN (no build step needed) -->
-    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+  <!-- Load Phaser itself from a CDN (no build step needed) -->
+  <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
 
-    <!-- Our own code, loaded after Phaser so it can use the Phaser object -->
-    <script src="src/domText.js"></script>
-    <!-- Cache-bust patch: adds domText.menu() if the cached domText.js didn't include it -->
-    <script>
-        if (typeof domText !== 'undefined' && typeof domText.menu !== 'function') {
-        domText.menu = function(gameX, gameY, text, options) {
+  <!-- Our own code, loaded after Phaser so it can use the Phaser object -->
+  <script src="src/domText.js"></script>
+  <!-- Cache-bust patch: adds domText.menu() if the cached domText.js didn't include it -->
+  <script>
+    if (typeof domText !== 'undefined' && typeof domText.menu !== 'function') {
+      domText.menu = function(gameX, gameY, text, options) {
         return this.create(gameX, gameY, text, Object.assign({}, options, { layer: 'menu' }));
-        };
-        console.log('[domText] menu() method patched in via index.html');
-        }
-    </script>
-    <script src="src/scenes/MapScene.js?v=2"></script>
-    <script src="src/editorData.js"></script>
-    <script src="src/gameState.js"></script>
-    <script src="src/saveSystem.js"></script>
-    <script src="src/scenes/BootScene.js"></script>
-    <script src="src/scenes/TitleScene.js"></script>
-    <script src="src/scenes/MapScene.js"></script>
-    <script src="src/scenes/DungeonScene.js"></script>
-    <script src="src/scenes/BattleScene.js"></script>
-    <script src="src/scenes/GameOverScene.js"></script>
-    <script src="src/main.js"></script>
+      };
+      console.log('[domText] menu() method patched in via index.html');
+    }
+  </script>
+  <script src="src/editorData.js"></script>
+  <script src="src/gameState.js"></script>
+  <script src="src/saveSystem.js"></script>
+  <script src="src/scenes/BootScene.js"></script>
+  <script src="src/scenes/TitleScene.js"></script>
+  <script src="src/scenes/MapScene.js"></script>
+  <script src="src/scenes/DungeonScene.js"></script>
+  <script src="src/scenes/BattleScene.js"></script>
+  <script src="src/scenes/GameOverScene.js"></script>
+  <script src="src/main.js"></script>
 </body>
 </html>
