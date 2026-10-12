@@ -727,9 +727,10 @@ class MapScene extends Phaser.Scene {
       });
     }
 
-    if (this.overlaySubState === 'EQUIP_SLOTS') {
+        if (this.overlaySubState === 'EQUIP_SLOTS') {
+      const hintY = Math.max(120, itemsStartY + Math.max(1, available.length) * itemRowH + 8);
       this.overlayEls.push(
-        domText.menu(RX, 120, 'Enter: equip/unequip slot', { fontSize: 7, color: '#7788aa', align: 'left' })
+        domText.menu(RX, hintY, 'Enter: equip/unequip slot', { fontSize: 7, color: '#7788aa', align: 'left' })
       );
     }
   }
