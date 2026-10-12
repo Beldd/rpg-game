@@ -608,12 +608,13 @@ class MapScene extends Phaser.Scene {
       );
     });
 
-    // Hint line at bottom of party panel
+    // Hint line at bottom of party panel — pushed below last row dynamically
+    const partyHintY = Math.max(120, startY + GameState.party.length * rowH + 8);
     const partyHint = this.partySwapSource !== null
       ? '↑↓ select target  Enter swap  Esc cancel'
       : '↑↓ browse  Enter select to swap';
     this.overlayEls.push(
-      domText.menu(RX, 120, partyHint, { fontSize: 7, color: '#7788aa', align: 'left' })
+      domText.menu(RX, partyHintY, partyHint, { fontSize: 7, color: '#7788aa', align: 'left' })
     );
 
     // Restart the blink now that the element has been (re)created
