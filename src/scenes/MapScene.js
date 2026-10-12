@@ -470,6 +470,7 @@ class MapScene extends Phaser.Scene {
 
   /** Removes all dynamic text elements created by the current render pass. */
   clearOverlayContent() {
+    this._destroyPortraits(); // always clean up Phaser portrait rects, regardless of which panel was active
     this.overlayEls.forEach(el => domText.remove(el));
     this.overlayEls = [];
   }
@@ -728,7 +729,7 @@ class MapScene extends Phaser.Scene {
 
     if (this.overlaySubState === 'EQUIP_SLOTS') {
       this.overlayEls.push(
-        domText.menu(RX, 128, 'Enter: equip/unequip slot', { fontSize: 7, color: '#7788aa', align: 'left' })
+        domText.menu(RX, 120, 'Enter: equip/unequip slot', { fontSize: 7, color: '#7788aa', align: 'left' })
       );
     }
   }
@@ -811,11 +812,11 @@ class MapScene extends Phaser.Scene {
 
     if (this.overlaySubState !== 'ITEMS_SELECT') {
       this.overlayEls.push(
-        domText.menu(RX, 116, 'Enter to use', { fontSize: 9, color: '#7788aa', align: 'left' })
+        domText.menu(RX, 120, 'Enter to use', { fontSize: 7, color: '#7788aa', align: 'left' })
       );
     } else {
       this.overlayEls.push(
-        domText.menu(RX, 116, '↑↓ select  Enter use', { fontSize: 9, color: '#7788aa', align: 'left' })
+        domText.menu(RX, 120, '↑↓ select  Enter use', { fontSize: 7, color: '#7788aa', align: 'left' })
       );
     }
   }
@@ -848,7 +849,7 @@ class MapScene extends Phaser.Scene {
     });
 
     this.overlayEls.push(
-      domText.menu(RX, 116, '↑↓ select  Enter confirm  Esc cancel', { fontSize: 8, color: '#445566', align: 'left' })
+      domText.menu(RX, 120, '↑↓ select  Enter confirm  Esc cancel', { fontSize: 7, color: '#7788aa', align: 'left' })
     );
   }
 
@@ -967,7 +968,7 @@ class MapScene extends Phaser.Scene {
 
     if (this.overlaySubState === 'SAVELOAD') {
       this.overlayEls.push(
-        domText.menu(RX, 116, '↑↓ select  Enter confirm', { fontSize: 9, color: '#445566', align: 'left' })
+        domText.menu(RX, 120, '↑↓ select  Enter confirm', { fontSize: 7, color: '#7788aa', align: 'left' })
       );
     }
   }
