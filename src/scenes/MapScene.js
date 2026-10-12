@@ -62,6 +62,8 @@ class MapScene extends Phaser.Scene {
 
     // Party sub-state
     this.partySelectedIndex = 0;
+    this.partySwapSource = null;  // index of the character "picked up" for swapping, null if none
+    this._partyBlinkInterval = null; // setInterval handle for the swap-source blink
 
     // Equip sub-state
     this.equipCharIndex = 0;
@@ -460,6 +462,7 @@ class MapScene extends Phaser.Scene {
   closeOverlay() {
     this.overlayOpen = false;
     this.overlaySubState = null;
+    this.partySwapSource = null;
     this.overlayBg.setVisible(false);
     this.overlayDivider.setVisible(false);
     this._destroyPortraits();
@@ -470,6 +473,7 @@ class MapScene extends Phaser.Scene {
 
   /** Removes all dynamic text elements created by the current render pass. */
   clearOverlayContent() {
+    this._stopSwapBlink();
     this._destroyPortraits(); // always clean up Phaser portrait rects, regardless of which panel was active
     this.overlayEls.forEach(el => domText.remove(el));
     this.overlayEls = [];
@@ -572,11 +576,13 @@ class MapScene extends Phaser.Scene {
         );
       }
 
-      // Name
-      const nameColor = member.hp <= 0 ? '#884444' : '#ffffff';
-      this.overlayEls.push(
-        domText.menu(RX + 28, y + 2, member.name, { fontSize: 11, color: nameColor, align: 'left' })
-      );
+      // Name — swap source pulses yellow; KO'd members are dimmed red
+      const isSwapSource = (this.partySwapSource === i);
+      const nameColor = member.hp <= 0 ? '#884444' : isSwapSource ? '#ffff00' : '#ffffff';
+      const nameEl = domText.menu(RX + 28, y + 2, member.name, { fontSize: 11, color: nameColor, align: 'left' });
+      // Store the name element so the blink interval can toggle it
+      if (isSwapSource) { this._blinkEl = nameEl; }
+      this.overlayEls.push(nameEl);
 
       // HP
       const hpColor = member.hp / member.maxHp > 0.4 ? '#33cc66' : '#cc4444';
@@ -603,6 +609,17 @@ class MapScene extends Phaser.Scene {
       );
     });
 
+    // Hint line at bottom of party panel
+    const partyHint = this.partySwapSource !== null
+      ? '↑↓ select target  Enter swap  Esc cancel'
+      : '↑↓ browse  Enter select to swap';
+    this.overlayEls.push(
+      domText.menu(RX, 120, partyHint, { fontSize: 7, color: '#7788aa', align: 'left' })
+    );
+
+    // Restart the blink now that the element has been (re)created
+    if (this.partySwapSource !== null) this._startSwapBlink();
+
     // Portrait placeholders (Phaser rectangles, not DOM — must be cleaned up separately).
     this._destroyPortraits();
     this._overlayPortraits = GameState.party.map((member, i) => {
@@ -616,6 +633,27 @@ class MapScene extends Phaser.Scene {
       ).setScrollFactor(0).setOrigin(0.5);
       return rect;
     });
+  }
+
+  /** Starts the blink interval for the swap-source name element. */
+  _startSwapBlink() {
+    this._stopSwapBlink();
+    let visible = true;
+    this._partyBlinkInterval = setInterval(() => {
+      if (this._blinkEl) {
+        this._blinkEl.style.opacity = visible ? '0' : '1';
+        visible = !visible;
+      }
+    }, 350);
+  }
+
+  /** Stops and clears the blink interval. */
+  _stopSwapBlink() {
+    if (this._partyBlinkInterval) {
+      clearInterval(this._partyBlinkInterval);
+      this._partyBlinkInterval = null;
+    }
+    this._blinkEl = null;
   }
 
   /** Cleans up Phaser portrait rectangles from the previous render. */
@@ -727,10 +765,9 @@ class MapScene extends Phaser.Scene {
       });
     }
 
-        if (this.overlaySubState === 'EQUIP_SLOTS') {
-      const hintY = Math.max(120, itemsStartY + Math.max(1, available.length) * itemRowH + 8);
+    if (this.overlaySubState === 'EQUIP_SLOTS') {
       this.overlayEls.push(
-        domText.menu(RX, hintY, 'Enter: equip/unequip slot', { fontSize: 7, color: '#7788aa', align: 'left' })
+        domText.menu(RX, 120, 'Enter: equip/unequip slot', { fontSize: 7, color: '#7788aa', align: 'left' })
       );
     }
   }
@@ -1181,13 +1218,43 @@ class MapScene extends Phaser.Scene {
 
       // ── PARTY sub-state ───────────────────────────────────────────────
       if (this.overlaySubState === 'PARTY') {
-        if (jdEsc || jdLeft) { this.overlaySubState = null; this.renderOverlay(); return; }
+        if (jdEsc || jdLeft) {
+          if (this.partySwapSource !== null) {
+            // Cancel the pending swap
+            this.partySwapSource = null;
+            this.renderOverlay();
+          } else {
+            this.overlaySubState = null;
+            this.renderOverlay();
+          }
+          return;
+        }
         if (jdUp) {
           this.partySelectedIndex = (this.partySelectedIndex - 1 + GameState.party.length) % GameState.party.length;
           this.renderOverlay();
+          if (this.partySwapSource !== null) this._startSwapBlink();
         } else if (jdDown) {
           this.partySelectedIndex = (this.partySelectedIndex + 1) % GameState.party.length;
           this.renderOverlay();
+          if (this.partySwapSource !== null) this._startSwapBlink();
+        } else if (jdEnter) {
+          if (this.partySwapSource === null) {
+            // Pick up this character for swapping
+            this.partySwapSource = this.partySelectedIndex;
+            this.renderOverlay();
+            this._startSwapBlink();
+          } else if (this.partySwapSource === this.partySelectedIndex) {
+            // Confirmed on same character — cancel
+            this.partySwapSource = null;
+            this.renderOverlay();
+          } else {
+            // Swap the two characters in the party array
+            const a = this.partySwapSource;
+            const b = this.partySelectedIndex;
+            [GameState.party[a], GameState.party[b]] = [GameState.party[b], GameState.party[a]];
+            this.partySwapSource = null;
+            this.renderOverlay();
+          }
         }
         return;
       }
