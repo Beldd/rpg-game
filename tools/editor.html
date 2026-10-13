@@ -321,6 +321,10 @@
       👤 Characters
       <span class="nav-count" id="nav-count-characters">0</span>
     </div>
+    <div class="nav-item" onclick="selectSection('zones')" id="nav-zones">
+      🗺️ Zones
+      <span class="nav-count" id="nav-count-zones">0</span>
+    </div>
     <div class="nav-item disabled" style="opacity:0.4;cursor:not-allowed;" title="Coming soon">
       ✨ Abilities <span class="nav-count">—</span>
     </div>
@@ -393,6 +397,7 @@ function selectSection(section) {
     consumables: '🧪 Consumables',
     equipment: '🗡️ Equipment',
     characters: '👤 Characters',
+    zones: '🗺️ Zones',
   };
   const titleEl = document.getElementById('list-panel-title');
   if (titleEl) titleEl.textContent = titles[section] || section;
@@ -421,6 +426,9 @@ function renderList() {
       sub = `${item.slot} · ${item.startingOwned ? 'starting item' : 'not starting'}`;
     } else if (activeSection === 'characters') {
       sub = `${(item.spells || []).length} spell${(item.spells || []).length === 1 ? '' : 's'} · HP ${item.startingHp} MP ${item.startingMp}`;
+    } else if (activeSection === 'zones') {
+      const enc = item.randomEncounters || [];
+      sub = `${item.enabled ? '✅ enabled' : '⛔ disabled'} · ${enc.length} encounter${enc.length === 1 ? '' : 's'}`;
     } else {
       sub = `ID: ${escHtml(item.id)}`;
     }
@@ -451,6 +459,8 @@ function renderForm() {
 
   if (activeSection === 'encounters') {
     renderEncounterForm(item, selectedIndex);
+  } else if (activeSection === 'zones') {
+    renderZoneForm(item, selectedIndex);
   } else if (activeSection === 'consumables') {
     renderConsumableForm(item, selectedIndex);
   } else if (activeSection === 'equipment') {
@@ -630,7 +640,22 @@ function renderEncounterForm(enc, index) {
             onchange="updateMapPosition(${index}, 'tileY', +this.value)" />
         </div>
         <div class="form-field" style="justify-content:flex-end;padding-top:20px;">
-          <span class="field-hint">Tile coordinates on the current map (20×15 grid)</span>
+          <span class="field-hint">Tile coordinates on the overworld map</span>
+        </div>
+      </div>
+      <div class="form-row" id="dungeon-position-row">
+        <div class="form-field" style="max-width:120px;">
+          <label>Dungeon tile X</label>
+          <input type="number" min="0" value="${(enc.dungeonPosition || {}).tileX || 14}"
+            onchange="updateDungeonPosition(${index}, 'tileX', +this.value)" />
+        </div>
+        <div class="form-field" style="max-width:120px;">
+          <label>Dungeon tile Y</label>
+          <input type="number" min="0" value="${(enc.dungeonPosition || {}).tileY || 9}"
+            onchange="updateDungeonPosition(${index}, 'tileY', +this.value)" />
+        </div>
+        <div class="form-field" style="justify-content:flex-end;padding-top:20px;">
+          <span class="field-hint">Tile coordinates inside the dungeon (leave 0,0 if not used there)</span>
         </div>
       </div>` : `
       <div class="form-row">
@@ -738,6 +763,14 @@ function updateMapPosition(index, axis, value) {
     editorData[activeSection][index].mapPosition = { tileX: 14, tileY: 9 };
   }
   editorData[activeSection][index].mapPosition[axis] = value;
+  markDirty();
+}
+
+function updateDungeonPosition(index, axis, value) {
+  if (!editorData[activeSection][index].dungeonPosition) {
+    editorData[activeSection][index].dungeonPosition = { tileX: 14, tileY: 9 };
+  }
+  editorData[activeSection][index].dungeonPosition[axis] = value;
   markDirty();
 }
 
@@ -1150,6 +1183,13 @@ function createNew() {
       baseStats: { attackMin: 3, attackMax: 6, defense: 0 },
       spells: [],
     };
+  } else if (activeSection === 'zones') {
+    newItem = {
+      id: `zone_${Date.now()}`,
+      name: 'New Zone',
+      enabled: false,
+      randomEncounters: [],
+    };
   } else {
     return;
   }
@@ -1237,6 +1277,9 @@ function updateNavCounts() {
   const ch = editorData.characters || [];
   const chEl = document.getElementById('nav-count-characters');
   if (chEl) chEl.textContent = ch.length;
+  const zo = editorData.zones || [];
+  const zoEl = document.getElementById('nav-count-zones');
+  if (zoEl) zoEl.textContent = zo.length;
 }
 
 function renderConsumableForm(con, index) {
@@ -1303,6 +1346,87 @@ function renderConsumableForm(con, index) {
       <button class="btn btn-danger" onclick="deleteItem(${index})">Delete consumable</button>
     </div>
   `;
+}
+
+// ── Zone form ──────────────────────────────────────────────────────
+function renderZoneForm(zone, index) {
+  // Build a checkbox list of all known encounter IDs so the designer
+  // can tick which ones appear in this zone's random encounter table.
+  const allEncounters = editorData.encounters || [];
+  const selected = new Set(zone.randomEncounters || []);
+
+  const encounterCheckboxes = allEncounters.length === 0
+    ? '<div style="color:#4a4a68;font-size:12px;padding:8px 0;">No encounters defined yet. Create some in ⚔️ Encounters first.</div>'
+    : allEncounters.map(enc => `
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+          <input type="checkbox" id="zone-enc-${escHtml(enc.id)}"
+            ${selected.has(enc.id) ? 'checked' : ''}
+            onchange="toggleZoneEncounter(${index}, '${escHtml(enc.id)}', this.checked)" />
+          <label for="zone-enc-${escHtml(enc.id)}" style="font-size:13px;cursor:pointer;">
+            ${escHtml(enc.name)}
+            <span style="color:#4a4a68;font-size:11px;margin-left:4px;">(${escHtml(enc.id)})</span>
+          </label>
+        </div>`).join('');
+
+  document.getElementById('form-content').innerHTML = `
+    <h3>Edit Zone</h3>
+
+    <div class="form-section">
+      <div class="form-section-title">Identity</div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>ID</label>
+          <input type="text" value="${escHtml(zone.id)}"
+            onchange="updateField(${index}, 'id', this.value)" />
+          <span class="field-hint">Stable key used by the game (e.g. "town", "overworld", "dungeon"). Changing this breaks the game's zone lookup.</span>
+        </div>
+        <div class="form-field">
+          <label>Display name</label>
+          <input type="text" value="${escHtml(zone.name)}"
+            onchange="updateField(${index}, 'name', this.value)" />
+        </div>
+      </div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Random Encounters</div>
+      <div class="form-row" style="align-items:center;gap:12px;margin-bottom:14px;">
+        <label style="font-size:13px;color:#8888b0;">Encounters enabled?</label>
+        <input type="checkbox" id="zone-enabled-${index}" ${zone.enabled ? 'checked' : ''}
+          onchange="updateZoneEnabled(${index}, this.checked)" />
+        <span class="field-hint">${zone.enabled ? 'Random encounters trigger in this zone.' : 'No encounters trigger — safe zone.'}</span>
+      </div>
+      <div class="form-section-title" style="margin-top:8px;">Encounter table</div>
+      <div class="field-hint" style="margin-bottom:10px;">Check each encounter that can appear in this zone. The game picks one at random from this list when an encounter triggers.</div>
+      <div id="zone-encounter-list">${encounterCheckboxes}</div>
+    </div>
+
+    <hr class="section-sep">
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-primary" onclick="saveAll()">Save changes</button>
+      <button class="btn btn-danger" onclick="deleteItem(${index})">Delete zone</button>
+    </div>
+  `;
+}
+
+function updateZoneEnabled(index, value) {
+  editorData.zones[index].enabled = value;
+  markDirty();
+}
+
+function toggleZoneEncounter(index, encId, checked) {
+  const zone = editorData.zones[index];
+  zone.randomEncounters = zone.randomEncounters || [];
+  if (checked) {
+    if (!zone.randomEncounters.includes(encId)) {
+      zone.randomEncounters.push(encId);
+    }
+  } else {
+    zone.randomEncounters = zone.randomEncounters.filter(id => id !== encId);
+  }
+  markDirty();
+  // Re-render the list panel subtitle to reflect the new count.
+  renderList();
 }
 
 function escHtml(str) {
