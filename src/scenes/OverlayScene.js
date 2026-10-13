@@ -129,32 +129,59 @@ class OverlayScene extends Phaser.Scene {
   }
 
   shutdown() {
-    // Clean up all DOM elements when the scene stops.
-    // Step 1: element-by-element removal via tracked references.
+    // _closeOverlay() should have already run cleanup eagerly.
+    // This is a safety net for any path that stops the scene without
+    // going through _closeOverlay() (e.g. the scene manager stopping it
+    // externally, or a scene restart). It's safe to call twice.
     this._stopSwapBlink();
     this._destroyPortraits();
-    this.overlayEls.forEach(el => domText.remove(el));
-    this.overlayEls = [];
-    if (this.dialogueTextEl) domText.remove(this.dialogueTextEl);
-    this.dialogueChoiceTexts.forEach(el => domText.remove(el));
-    this.dialogueChoiceTexts = [];
+    if (this.overlayEls) { this.overlayEls.forEach(el => domText.remove(el)); this.overlayEls = []; }
+    if (this.dialogueTextEl) { domText.remove(this.dialogueTextEl); this.dialogueTextEl = null; }
+    if (this.dialogueChoiceTexts) { this.dialogueChoiceTexts.forEach(el => domText.remove(el)); this.dialogueChoiceTexts = []; }
     if (this.dialogueCursorEl) { domText.remove(this.dialogueCursorEl); this.dialogueCursorEl = null; }
 
-    // Step 2: nuclear fallback — wipe #menu-overlay entirely so nothing
-    // can leak even if a reference was lost (e.g. a delayed callback
-    // that created an element after the tracked arrays were cleared).
+    // Nuclear fallback — wipe both layers
     const menuOverlay = document.getElementById('menu-overlay');
     if (menuOverlay) menuOverlay.innerHTML = '';
-
-    // Restore world-layer DOM text visibility and opacity.
-    document.getElementById('text-overlay').style.visibility = 'visible';
-    document.getElementById('text-overlay').style.opacity = '1';
+    const textOverlay = document.getElementById('text-overlay');
+    if (textOverlay) { textOverlay.style.visibility = 'visible'; textOverlay.style.opacity = '1'; }
   }
 
   // ─── Close ───────────────────────────────────────────────────────────────
 
   _closeOverlay() {
-    // shutdown() fires automatically when the scene stops
+    // Do ALL DOM cleanup here, eagerly, before stopping the scene.
+    // Relying solely on shutdown() is fragile: Phaser doesn't guarantee
+    // shutdown() fires synchronously on scene.stop() in all edge cases,
+    // and any pending time.delayedCall that creates elements after shutdown
+    // would leave orphans. Cleaning up here is the guaranteed path.
+
+    // Cancel any pending delayed callbacks so they can't recreate elements
+    // after we've wiped the DOM.
+    this.time.removeAllEvents();
+
+    // Tracked element cleanup
+    this._stopSwapBlink();
+    this._destroyPortraits();
+    this.overlayEls.forEach(el => domText.remove(el));
+    this.overlayEls = [];
+    if (this.dialogueTextEl) { domText.remove(this.dialogueTextEl); this.dialogueTextEl = null; }
+    this.dialogueChoiceTexts.forEach(el => domText.remove(el));
+    this.dialogueChoiceTexts = [];
+    if (this.dialogueCursorEl) { domText.remove(this.dialogueCursorEl); this.dialogueCursorEl = null; }
+
+    // Nuclear fallback: wipe both overlay layers entirely
+    const menuOverlay = document.getElementById('menu-overlay');
+    if (menuOverlay) menuOverlay.innerHTML = '';
+
+    // Restore world-layer visibility and opacity so HUD, NPC dialogue,
+    // and BattleScene text all become visible again immediately.
+    const textOverlay = document.getElementById('text-overlay');
+    textOverlay.style.visibility = 'visible';
+    textOverlay.style.opacity = '1';
+
+    // Now stop the scene — shutdown() will run too (a no-op at this point
+    // since everything is already cleaned up, which is fine).
     this.scene.stop();
   }
 
