@@ -120,10 +120,18 @@ const domText = {
    * clearAll() + creating new text in the next scene, alongside
    * cameras.main.fadeIn(), so the new scene's text fades in rather
    * than appearing instantly.
+   *
+   * Also restores visibility (not just opacity) because OverlayScene hides
+   * #text-overlay via visibility:hidden while it's open. If shutdown()
+   * didn't run cleanly, or if BattleScene's create() fires before shutdown()
+   * restores visibility, all battle text would be invisible. Setting it
+   * here in fadeIn() provides a second guarantee.
    */
   fadeIn() {
-    document.getElementById('text-overlay').style.opacity = '1';
+    const t = document.getElementById('text-overlay');
+    t.style.opacity = '1';
+    t.style.visibility = 'visible';
     const menu = document.getElementById('menu-overlay');
-    if (menu) menu.style.opacity = '1';
+    if (menu) { menu.style.opacity = '1'; menu.style.visibility = 'visible'; }
   },
 };

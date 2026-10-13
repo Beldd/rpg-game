@@ -92,6 +92,13 @@ class OverlayScene extends Phaser.Scene {
     this.overlayKeyI = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
     this.spaceKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
+    // One-frame grace period: the P/I keypress that launched this scene from
+    // the caller is still JustDown on this scene's very first update() call
+    // (Phaser's JustDown state is shared across additive scenes for that frame).
+    // If we read it immediately, we'd close ourselves the same frame we opened.
+    // Setting this flag suppresses all key input until the next frame.
+    this._inputEnabled = false;
+
     // Dialogue box (for Load confirmation)
     // NOTE: Use domText.menu() (not domText.create()) so all overlay elements
     // live in #menu-overlay, not #text-overlay. This is critical: create() hides
@@ -154,6 +161,10 @@ class OverlayScene extends Phaser.Scene {
   // ─── Update loop ─────────────────────────────────────────────────────────
 
   update() {
+    // Skip the very first frame so the P/I keypress that opened us from the
+    // caller scene doesn't immediately close us (same-frame JustDown sharing).
+    if (!this._inputEnabled) { this._inputEnabled = true; return; }
+
     // Dialogue (Load confirmation) takes priority
     if (this.dialogueState === 'CHOICE') {
       if (Phaser.Input.Keyboard.JustDown(this.cursors.left)) {
