@@ -1324,12 +1324,17 @@ class MapScene extends Phaser.Scene {
   }
 
   update() {
-    // Dialogue (e.g. a Load confirmation opened from within the
-    // Save/Load overlay view) takes priority over the overlay itself.
-    // This check has to come BEFORE the overlay check below — otherwise,
-    // since that block returns unconditionally, a dialogue opened while
-    // the overlay is open would never receive its own input at all,
-    // leaving Fight/Flee-style confirmations completely unusable.
+    // While OverlayScene is running on top of us, suppress ALL input —
+    // movement, dialogue, everything. OverlayScene owns the keyboard.
+    // This must be first: if dialogue checks run while the overlay is open,
+    // Enter/arrow keys fire in both scenes simultaneously and the NPC
+    // dialogue box (in #text-overlay) is invisible anyway since OverlayScene
+    // hides that layer. Guard first, then check everything else.
+    if (this.scene.isActive('OverlayScene')) return;
+
+    // Dialogue (NPC message/choice) takes priority over movement.
+    // Note: this comes AFTER the OverlayScene guard above, so MapScene
+    // dialogue input is only active when the overlay is fully closed.
     if (this.dialogueState === 'MESSAGE') {
       if (Phaser.Input.Keyboard.JustDown(this.enterKey)) {
         this.closeDialogue();
@@ -1349,10 +1354,6 @@ class MapScene extends Phaser.Scene {
       }
       return;
     }
-
-    // While OverlayScene is running on top of us, suppress all map movement
-    // and interaction input — OverlayScene owns the keyboard at that point.
-    if (this.scene.isActive('OverlayScene')) return;
 
     // Legacy overlay block — overlayOpen is never true via the new OverlayScene
     // path, so this block is dead code kept only to avoid a JS error if somehow

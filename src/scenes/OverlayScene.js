@@ -93,6 +93,10 @@ class OverlayScene extends Phaser.Scene {
     this.spaceKey  = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.SPACE);
 
     // Dialogue box (for Load confirmation)
+    // NOTE: Use domText.menu() (not domText.create()) so all overlay elements
+    // live in #menu-overlay, not #text-overlay. This is critical: create() hides
+    // #text-overlay during open, so any element placed there via create() would be
+    // invisible while the overlay is open and then leak visible after close.
     const dialogueBoxY = height / 2;
     const dialogueBoxW = width - 60;
     const dialogueBoxH = 90;
@@ -100,7 +104,7 @@ class OverlayScene extends Phaser.Scene {
       .setOrigin(0.5)
       .setScrollFactor(0)
       .setVisible(false);
-    this.dialogueTextEl = domText.create(width / 2, dialogueBoxY - 14, '', {
+    this.dialogueTextEl = domText.menu(width / 2, dialogueBoxY - 14, '', {
       fontSize: 12, color: '#ffffff', align: 'center',
     });
     this.dialogueTextEl.style.display = 'none';
@@ -804,10 +808,13 @@ class OverlayScene extends Phaser.Scene {
     const slotWidth = 70;
     const startX = width / 2 - (this.dialogueOptions.length * slotWidth) / 2 + 16;
     const y = height / 2 + 28;
+    // Use domText.menu() so these go into #menu-overlay, not #text-overlay.
+    // Elements in #text-overlay are hidden while the overlay is open and leak
+    // visible after close — using menu() keeps them in the correct layer.
     this.dialogueChoiceTexts = this.dialogueOptions.map((opt, i) =>
-      domText.create(startX + i * slotWidth, y, opt.label, { fontSize: 12, color: '#ffffff', align: 'left' })
+      domText.menu(startX + i * slotWidth, y, opt.label, { fontSize: 12, color: '#ffffff', align: 'left' })
     );
-    this.dialogueCursorEl = domText.create(startX - 16, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' });
+    this.dialogueCursorEl = domText.menu(startX - 16, y, '>', { fontSize: 12, color: '#ffff00', align: 'left' });
     this._updateDialogueCursor();
   }
 
