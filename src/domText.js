@@ -94,28 +94,36 @@ const domText = {
 
   /** Removes every overlay text element at once — useful in a scene's
    *  shutdown handler to guarantee a clean slate, even if we forgot
-   *  to track a reference to something we created. */
+   *  to track a reference to something we created.
+   *  Clears BOTH layers (#text-overlay and #menu-overlay) so neither
+   *  accumulates garbage across scene transitions. */
   clearAll() {
     document.getElementById('text-overlay').innerHTML = '';
+    const menu = document.getElementById('menu-overlay');
+    if (menu) menu.innerHTML = '';
   },
 
   /**
-   * Fades the entire text overlay out, matching the duration of our
+   * Fades BOTH text overlay layers out, matching the duration of our
    * Phaser camera fades (see the CSS transition on #text-overlay).
    * Call this at the same moment you call cameras.main.fadeOut() so
    * text and canvas fade together instead of text popping abruptly.
    */
   fadeOut() {
     document.getElementById('text-overlay').style.opacity = '0';
+    const menu = document.getElementById('menu-overlay');
+    if (menu) menu.style.opacity = '0';
   },
 
   /**
-   * Restores the text overlay to fully visible. Call this after
+   * Restores both text overlay layers to fully visible. Call this after
    * clearAll() + creating new text in the next scene, alongside
    * cameras.main.fadeIn(), so the new scene's text fades in rather
    * than appearing instantly.
    */
   fadeIn() {
     document.getElementById('text-overlay').style.opacity = '1';
+    const menu = document.getElementById('menu-overlay');
+    if (menu) menu.style.opacity = '1';
   },
 };

@@ -122,7 +122,8 @@ class OverlayScene extends Phaser.Scene {
   }
 
   shutdown() {
-    // Clean up all DOM elements when the scene stops
+    // Clean up all DOM elements when the scene stops.
+    // Step 1: element-by-element removal via tracked references.
     this._stopSwapBlink();
     this._destroyPortraits();
     this.overlayEls.forEach(el => domText.remove(el));
@@ -131,8 +132,16 @@ class OverlayScene extends Phaser.Scene {
     this.dialogueChoiceTexts.forEach(el => domText.remove(el));
     this.dialogueChoiceTexts = [];
     if (this.dialogueCursorEl) { domText.remove(this.dialogueCursorEl); this.dialogueCursorEl = null; }
-    // Restore world-layer DOM text
+
+    // Step 2: nuclear fallback — wipe #menu-overlay entirely so nothing
+    // can leak even if a reference was lost (e.g. a delayed callback
+    // that created an element after the tracked arrays were cleared).
+    const menuOverlay = document.getElementById('menu-overlay');
+    if (menuOverlay) menuOverlay.innerHTML = '';
+
+    // Restore world-layer DOM text visibility and opacity.
     document.getElementById('text-overlay').style.visibility = 'visible';
+    document.getElementById('text-overlay').style.opacity = '1';
   }
 
   // ─── Close ───────────────────────────────────────────────────────────────
