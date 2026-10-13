@@ -1324,12 +1324,21 @@ class MapScene extends Phaser.Scene {
   }
 
   update() {
+    // P / I open the overlay — check FIRST, before the isActive guard,
+    // so the keypress isn't lost on the frame the overlay is launching.
+    // Mirror DungeonScene's pattern exactly: check P/I, launch if not
+    // already active, then return. The isActive guard below handles
+    // suppressing all other input while the overlay is running.
+    if (Phaser.Input.Keyboard.JustDown(this.overlayKey)
+        || Phaser.Input.Keyboard.JustDown(this.overlayKeyI)) {
+      if (!this.scene.isActive('OverlayScene')) {
+        this.scene.launch('OverlayScene', { callerKey: 'MapScene' });
+      }
+      return;
+    }
+
     // While OverlayScene is running on top of us, suppress ALL input —
     // movement, dialogue, everything. OverlayScene owns the keyboard.
-    // This must be first: if dialogue checks run while the overlay is open,
-    // Enter/arrow keys fire in both scenes simultaneously and the NPC
-    // dialogue box (in #text-overlay) is invisible anyway since OverlayScene
-    // hides that layer. Guard first, then check everything else.
     if (this.scene.isActive('OverlayScene')) return;
 
     // Dialogue (NPC message/choice) takes priority over movement.
@@ -1543,16 +1552,6 @@ class MapScene extends Phaser.Scene {
       }
 
       return; // unknown sub-state — consume input to avoid leaking to movement
-    }
-
-    // P or I opens the inventory/status overlay.
-    // Launch OverlayScene on top of MapScene so the map stays running underneath.
-    if (Phaser.Input.Keyboard.JustDown(this.overlayKey)
-        || Phaser.Input.Keyboard.JustDown(this.overlayKeyI)) {
-      if (!this.scene.isActive('OverlayScene')) {
-        this.scene.launch('OverlayScene', { callerKey: 'MapScene' });
-      }
-      return;
     }
 
     // Enter while adjacent to the wizard NPC opens the dungeon-reset dialogue.
