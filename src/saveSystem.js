@@ -21,8 +21,17 @@
  * save always resumes from the default map start point.
  */
 const SaveSystem = {
-  NUM_SLOTS: 3,
-  AUTO_SAVE_SLOT: 1,
+  NUM_SLOTS: 3,               // manual slots, numbered 1..NUM_SLOTS
+  AUTO_SAVE_SLOT: 'auto',     // dedicated autosave slot — never shared with a manual slot
+                              // (stored under the key rpg-save-slot-auto)
+
+  /** Every slot id that can hold a save: the manual slots, then the autosave. */
+  slotIds() {
+    const ids = [];
+    for (let i = 1; i <= this.NUM_SLOTS; i++) ids.push(i);
+    ids.push(this.AUTO_SAVE_SLOT);
+    return ids;
+  },
 
   /** Builds the localStorage key for a given slot number (1-indexed). */
   _keyForSlot(slotNumber) {
@@ -105,10 +114,7 @@ const SaveSystem = {
    * whether to offer "Continue" at all.
    */
   anySaveExists() {
-    for (let i = 1; i <= this.NUM_SLOTS; i++) {
-      if (this.slotExists(i)) return true;
-    }
-    return false;
+    return this.slotIds().some((id) => this.slotExists(id));
   },
 
   /**
@@ -121,11 +127,11 @@ const SaveSystem = {
     let bestSlot = null;
     let bestTime = -Infinity;
 
-    for (let i = 1; i <= this.NUM_SLOTS; i++) {
-      const snapshot = this.readSlot(i);
+    for (const id of this.slotIds()) {
+      const snapshot = this.readSlot(id);
       if (snapshot && snapshot.savedAt > bestTime) {
         bestTime = snapshot.savedAt;
-        bestSlot = i;
+        bestSlot = id;
       }
     }
 

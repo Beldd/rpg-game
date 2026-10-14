@@ -364,10 +364,11 @@ class OverlayScene extends Phaser.Scene {
         this.saveLoadMode = this.saveLoadMode === 'SAVE' ? 'LOAD' : 'SAVE';
         this.renderOverlay();
       } else if (jdUp) {
-        this.saveLoadSelectedIndex = (this.saveLoadSelectedIndex - 1 + SaveSystem.NUM_SLOTS) % SaveSystem.NUM_SLOTS;
+        const slotCount = SaveSystem.slotIds().length; // manual slots + the autosave row
+        this.saveLoadSelectedIndex = (this.saveLoadSelectedIndex - 1 + slotCount) % slotCount;
         this.renderOverlay();
       } else if (jdDown) {
-        this.saveLoadSelectedIndex = (this.saveLoadSelectedIndex + 1) % SaveSystem.NUM_SLOTS;
+        this.saveLoadSelectedIndex = (this.saveLoadSelectedIndex + 1) % SaveSystem.slotIds().length;
         this.renderOverlay();
       } else if (jdEnter) {
         this.confirmSaveLoadSelection();
@@ -761,8 +762,12 @@ class OverlayScene extends Phaser.Scene {
     const slotStartY = 42;
     const slotRowH = 22;
 
-    for (let i = 0; i < SaveSystem.NUM_SLOTS; i++) {
-      const slotNumber = i + 1;
+    // Rows: manual slots 1..N, then the dedicated autosave as the last row.
+    // The autosave is written by the game after each victory, so it can be
+    // loaded here but never saved to by hand.
+    const slotIds = SaveSystem.slotIds();
+    for (let i = 0; i < slotIds.length; i++) {
+      const slotNumber = slotIds[i];
       const y = slotStartY + i * slotRowH;
       const isSelected = (this.overlaySubState === 'SAVELOAD') && this.saveLoadSelectedIndex === i;
       const isAuto = slotNumber === SaveSystem.AUTO_SAVE_SLOT;
@@ -774,7 +779,9 @@ class OverlayScene extends Phaser.Scene {
         timeText = secs < 60 ? `${secs}s ago` : `${Math.floor(secs / 60)}m ago`;
         statusText = snapshot.playerName ? snapshot.playerName : 'Save data';
       }
-      const slotLabel = `Slot ${slotNumber}${isAuto ? ' ★' : ''}`;
+      const slotLabel = isAuto
+        ? `Autosave ★${this.saveLoadMode === 'SAVE' ? '  (load only)' : ''}`
+        : `Slot ${slotNumber}`;
       const rowColor = isSelected ? '#ffffff' : '#778899';
 
       if (isSelected) {
@@ -788,14 +795,22 @@ class OverlayScene extends Phaser.Scene {
     }
 
     if (this.overlaySubState === 'SAVELOAD') {
-      this.overlayEls.push(domText.menu(RX, 120, '↑↓ select  Enter confirm', { fontSize: 7, color: '#7788aa', align: 'left' }));
+      // Below the last row (4 rows of 22px starting at y=42 end near y=130).
+      this.overlayEls.push(domText.menu(RX, 138, '↑↓ select  Enter confirm', { fontSize: 7, color: '#7788aa', align: 'left' }));
     }
   }
 
+  /** Display name for a slot id: "Slot 2", or "Autosave" for the dedicated slot. */
+  _slotName(slotId) {
+    return slotId === SaveSystem.AUTO_SAVE_SLOT ? 'Autosave' : `Slot ${slotId}`;
+  }
+
   confirmSaveLoadSelection() {
-    const slotNumber = this.saveLoadSelectedIndex + 1;
+    const slotNumber = SaveSystem.slotIds()[this.saveLoadSelectedIndex];
 
     if (this.saveLoadMode === 'SAVE') {
+      // The autosave slot is owned by the game; manual saves can't overwrite it.
+      if (slotNumber === SaveSystem.AUTO_SAVE_SLOT) return;
       SaveSystem.saveToSlot(slotNumber);
       this.renderOverlay();
       return;
@@ -803,7 +818,7 @@ class OverlayScene extends Phaser.Scene {
 
     if (!SaveSystem.slotExists(slotNumber)) return;
 
-    this._openChoiceDialogue(`Load Slot ${slotNumber}? Current progress will be overwritten.`, [
+    this._openChoiceDialogue(`Load ${this._slotName(slotNumber)}? Current progress will be overwritten.`, [
       { label: 'Load', action: () => this.performLoad(slotNumber) },
       { label: 'Cancel', action: () => this._closeChoiceDialogue() },
     ]);
@@ -815,7 +830,7 @@ class OverlayScene extends Phaser.Scene {
     this.clearOverlayContent();
     this.renderSidebar();
     this.overlayEls.push(
-      domText.menu(202, 72, `Loaded Slot ${slotNumber}!`, { fontSize: 13, color: '#33cc66', align: 'center' })
+      domText.menu(202, 72, `Loaded ${this._slotName(slotNumber)}!`, { fontSize: 13, color: '#33cc66', align: 'center' })
     );
 
     this.time.delayedCall(900, () => {

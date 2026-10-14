@@ -196,7 +196,24 @@ const GameState = {
     if (!pool || pool.length === 0) return null;
     if (Math.random() >= dropChance) return null;
 
-    const template = pool[Math.floor(Math.random() * pool.length)];
+    // Weighted pick: each entry's `weight` (set in the editor) is its
+    // relative chance, e.g. weights 3 and 1 drop 75% / 25% of the time.
+    // A missing weight counts as 1, and a weight of 0 means "never drops".
+    // If every weight is 0, fall back to an even pick rather than
+    // silently dropping nothing.
+    const weightOf = (e) => (Number.isFinite(e.weight) ? Math.max(0, e.weight) : 1);
+    const totalWeight = pool.reduce((sum, e) => sum + weightOf(e), 0);
+    let template;
+    if (totalWeight <= 0) {
+      template = pool[Math.floor(Math.random() * pool.length)];
+    } else {
+      let roll = Math.random() * totalWeight;
+      template = pool[pool.length - 1];
+      for (const entry of pool) {
+        roll -= weightOf(entry);
+        if (roll < 0) { template = entry; break; }
+      }
+    }
 
     if (template.stackable) {
       const existing = this.inventory.find((i) => i.name === template.name);
