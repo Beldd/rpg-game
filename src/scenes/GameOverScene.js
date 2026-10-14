@@ -44,7 +44,8 @@ class GameOverScene extends Phaser.Scene {
       domText.fadeOut();
       this.cameras.main.once('camerafadeoutcomplete', () => {
         domText.clearAll();
-        this.scene.start('MapScene');
+        // Explicit empty data so a stale battle-return position isn't reused.
+        this.scene.start('MapScene', {});
       });
     }
   }

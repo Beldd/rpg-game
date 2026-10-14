@@ -139,8 +139,12 @@ class MapScene extends Phaser.Scene {
     // Overridden by returnX/returnY if returning from DungeonScene, so
     // the player reappears just outside the dungeon entrance door.
     const sceneData = this.scene.settings.data || {};
-    const startTileX = sceneData.returnX ?? 5;
-    const startTileY = sceneData.returnY ?? 13;
+    // returnData from BattleScene (battle return) — guard against stale
+    // scene.settings.data that persists across visits without a real return.
+    const rawReturn = sceneData.returnData || null;
+    const returnData = (rawReturn && typeof rawReturn.victory === 'boolean') ? rawReturn : null;
+    const startTileX = returnData?.spawnTileX ?? sceneData.returnX ?? 5;
+    const startTileY = returnData?.spawnTileY ?? sceneData.returnY ?? 13;
 
     this.player = this.add.image(
       startTileX * this.TILE_SIZE + this.TILE_SIZE / 2,
@@ -373,6 +377,11 @@ class MapScene extends Phaser.Scene {
       return;
     }
 
+    // Snapshot position now, before the fade, so returnData carries the
+    // tile where the fight started and MapScene restores it on return.
+    const spawnX = this.playerTileX;
+    const spawnY = this.playerTileY;
+
     this.cameras.main.fadeOut(400, 0, 0, 0);
     domText.fadeOut();
     this.cameras.main.once('camerafadeoutcomplete', () => {
@@ -380,6 +389,11 @@ class MapScene extends Phaser.Scene {
       this.scene.start('BattleScene', {
         encounterId: this.activeEncounterId,
         returnScene: 'MapScene',
+        returnData: {
+          spawnTileX: spawnX,
+          spawnTileY: spawnY,
+          isStaticEncounter: false,
+        },
       });
     });
   }
@@ -1264,15 +1278,24 @@ class MapScene extends Phaser.Scene {
   acceptChallenge() {
     this.closeDialogue();
 
+    // Snapshot position before the fade so we can restore it on return.
+    const spawnX = this.playerTileX;
+    const spawnY = this.playerTileY;
+
     this.cameras.main.fadeOut(400, 0, 0, 0);
     domText.fadeOut();
 
-    // 'camerafadeoutcomplete' fires once the fade animation finishes.
-    // We wait for it rather than using a fixed timer so the fade
-    // duration and the scene switch always stay in sync, even if we
-    // change the fade duration later.
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      this.scene.start('BattleScene', { encounterId: this.activeEncounterId });
+      this.scene.start('BattleScene', {
+        encounterId: this.activeEncounterId,
+        returnScene: 'MapScene',
+        returnData: {
+          spawnTileX: spawnX,
+          spawnTileY: spawnY,
+          encounterId: this.activeEncounterId,
+          isStaticEncounter: true,
+        },
+      });
     });
   }
 

@@ -97,7 +97,10 @@ class TitleScene extends Phaser.Scene {
     domText.fadeOut();
     this.cameras.main.once('camerafadeoutcomplete', () => {
       domText.clearAll();
-      this.scene.start('MapScene');
+      // Pass an explicit empty object: Phaser keeps the previous
+      // scene.settings.data when start() gets no data, which would
+      // re-apply a stale battle-return or dungeon-exit position.
+      this.scene.start('MapScene', {});
     });
   }
 
