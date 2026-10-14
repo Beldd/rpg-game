@@ -206,11 +206,16 @@ const GameState = {
         this.inventory.push({ name: template.name, quantity: 1 });
       }
     } else {
+      // Non-stackable item (equipment). The drop pool entry only stores
+      // name/weight/stackable — it doesn't carry slot or bonus. Look up
+      // the full definition from EditorData so the dropped item has the
+      // correct slot and bonus array and can actually be equipped.
+      const def = EditorData.getEquipmentByName(template.name);
       this.inventory.push({
         name: template.name,
         quantity: 1,
-        slot: template.slot,
-        bonus: template.bonus ? { ...template.bonus } : undefined,
+        slot: def ? def.slot : template.slot,
+        bonus: def ? def.bonus : (template.bonus || undefined),
       });
     }
 
