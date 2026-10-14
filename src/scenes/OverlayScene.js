@@ -800,6 +800,15 @@ class OverlayScene extends Phaser.Scene {
     }
   }
 
+  /** Briefly shows a notice in the hint line, then restores the normal panel. */
+  _flashSaveNotice(text) {
+    const el = domText.menu(88, 138, text, { fontSize: 7, color: '#ff9966', align: 'left' });
+    this.overlayEls.push(el);
+    this.time.delayedCall(1800, () => {
+      if (this.scene.isActive() && this.overlaySubState === 'SAVELOAD') this.renderOverlay();
+    });
+  }
+
   /** Display name for a slot id: "Slot 2", or "Autosave" for the dedicated slot. */
   _slotName(slotId) {
     return slotId === SaveSystem.AUTO_SAVE_SLOT ? 'Autosave' : `Slot ${slotId}`;
@@ -810,7 +819,10 @@ class OverlayScene extends Phaser.Scene {
 
     if (this.saveLoadMode === 'SAVE') {
       // The autosave slot is owned by the game; manual saves can't overwrite it.
-      if (slotNumber === SaveSystem.AUTO_SAVE_SLOT) return;
+      if (slotNumber === SaveSystem.AUTO_SAVE_SLOT) {
+        this._flashSaveNotice('Autosave is load-only. Pick a numbered slot to save.');
+        return;
+      }
       SaveSystem.saveToSlot(slotNumber);
       this.renderOverlay();
       return;
@@ -834,9 +846,14 @@ class OverlayScene extends Phaser.Scene {
     );
 
     this.time.delayedCall(900, () => {
-      // Emit on the global event bus so the caller scene can fade its camera
-      this.game.events.emit('overlayLoadComplete');
+      // Close FIRST so a throwing listener can never leave the overlay stuck.
       this._closeOverlay();
+      // Then notify the caller scene (global bus) so it can fade its camera.
+      try {
+        this.game.events.emit('overlayLoadComplete');
+      } catch (e) {
+        console.error('[OverlayScene] overlayLoadComplete listener threw:', e);
+      }
     });
   }
 

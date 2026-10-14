@@ -287,13 +287,19 @@ class MapScene extends Phaser.Scene {
     // Listen for a successful Load performed inside OverlayScene.
     // After a load, fade the camera out and back in so state changes
     // (party HP, inventory, etc.) are picked up cleanly on fade-in.
-    this.game.events.once('overlayLoadComplete', () => {
+    // Registered per create() and removed on shutdown, so a stale listener
+    // from an earlier visit can never fire against a stopped scene.
+    this._onOverlayLoadComplete = () => {
       this.cameras.main.fadeOut(400, 0, 0, 0);
       domText.fadeOut();
       this.cameras.main.once('camerafadeoutcomplete', () => {
         this.cameras.main.fadeIn(400, 0, 0, 0);
         domText.fadeIn();
       });
+    };
+    this.game.events.on('overlayLoadComplete', this._onOverlayLoadComplete);
+    this.events.once('shutdown', () => {
+      this.game.events.off('overlayLoadComplete', this._onOverlayLoadComplete);
     });
 
     console.log(`Map loaded: ${map.width}x${map.height} tiles`);

@@ -195,13 +195,17 @@ class DungeonScene extends Phaser.Scene {
     this.overlayKeyI = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.I);
 
     // After a Load performed in OverlayScene, fade the camera so state updates cleanly.
-    this.game.events.once('overlayLoadComplete', () => {
+    this._onOverlayLoadComplete = () => {
       this.cameras.main.fadeOut(400, 0, 0, 0);
       domText.fadeOut();
       this.cameras.main.once('camerafadeoutcomplete', () => {
         this.cameras.main.fadeIn(400, 0, 0, 0);
         domText.fadeIn();
       });
+    };
+    this.game.events.on('overlayLoadComplete', this._onOverlayLoadComplete);
+    this.events.once('shutdown', () => {
+      this.game.events.off('overlayLoadComplete', this._onOverlayLoadComplete);
     });
 
     // Fade in from black on entry
