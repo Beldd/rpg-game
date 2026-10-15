@@ -295,6 +295,9 @@
   <h1>Fantasy of Arcadia</h1>
   <span class="topbar-tag">Design Tools</span>
   <div id="topbar-actions">
+    <button class="btn btn-secondary btn-sm" onclick="exportContent()" title="Download game-content.json">Export</button>
+    <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-file').click()" title="Replace all editor data with a game-content.json">Import</button>
+    <input type="file" id="import-file" accept=".json,application/json" style="display:none" onchange="importContent(event)">
     <button class="btn btn-secondary btn-sm" onclick="resetToDefaults()">Reset to defaults</button>
   </div>
 </div>
@@ -1237,6 +1240,65 @@ function resetToDefaults() {
   renderList();
   showEmptyState();
   setStatus('Reset to defaults.', 'success');
+}
+
+// ── Export / import ────────────────────────────────────────────────
+// The exported file is the editor data plus a small header. Commit it to
+// the repo as game-content.json so content is shared and versioned.
+function exportContent() {
+  const payload = {
+    format: 'arcadia-content',
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    data: editorData,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'game-content.json';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+  setStatus('Exported game-content.json. Put it in the repo root to share it.', 'success');
+}
+
+function importContent(event) {
+  const input = event.target;
+  const file = input.files && input.files[0];
+  input.value = ''; // allow re-importing the same file later
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onerror = () => setStatus('Could not read that file.', 'error');
+  reader.onload = () => {
+    let parsed;
+    try {
+      parsed = JSON.parse(reader.result);
+    } catch (err) {
+      setStatus('Import failed: not valid JSON.', 'error');
+      return;
+    }
+    // Accept the wrapped export format or a bare content object.
+    const data = (parsed && parsed.format === 'arcadia-content') ? parsed.data : parsed;
+    const problem = EditorData.validate(data);
+    if (problem) {
+      setStatus(`Import failed: ${problem}`, 'error');
+      return;
+    }
+    const counts = ['encounters', 'consumables', 'equipment', 'characters', 'zones']
+      .map(k => `${(data[k] || []).length} ${k}`).join(', ');
+    if (!confirm(`Replace ALL current editor data with "${file.name}"?\n\nFile contains: ${counts}.\nYour current data will be discarded (export first if you want a backup).`)) return;
+
+    editorData = EditorData.migrate(data);
+    selectedIndex = null;
+    saveAll();
+    renderList();
+    showEmptyState();
+    setStatus(`Imported ${file.name}. Refresh the game to apply.`, 'success');
+  };
+  reader.readAsText(file);
 }
 
 // ── Debug: raw JSON viewer ─────────────────────────────────────────

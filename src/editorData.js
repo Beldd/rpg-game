@@ -196,17 +196,41 @@ const EditorData = {
     try {
       const raw = localStorage.getItem(EDITOR_STORAGE_KEY);
       if (!raw) return JSON.parse(JSON.stringify(this.defaults));
-      const stored = JSON.parse(raw);
-      this._migrateEncounters(stored);
-      this._migrateConsumables(stored);
-      this._migrateEquipment(stored);
-      this._migrateCharacters(stored);
-      this._migrateZones(stored);
-      return stored;
+      return this.migrate(JSON.parse(raw));
     } catch (err) {
       console.error('EditorData.load failed, returning defaults:', err);
       return JSON.parse(JSON.stringify(this.defaults));
     }
+  },
+
+  /**
+   * Brings content data of any age up to the current schema, in place.
+   * Shared by load() (localStorage) and the editor's JSON import, so a file
+   * exported from an older version of the editor still imports cleanly.
+   */
+  migrate(data) {
+    this._migrateEncounters(data);
+    this._migrateConsumables(data);
+    this._migrateEquipment(data);
+    this._migrateCharacters(data);
+    this._migrateZones(data);
+    return data;
+  },
+
+  /**
+   * Returns an error string if `data` is clearly not editor content,
+   * or null if it looks usable. Deliberately shallow: it guards against
+   * importing the wrong file, not against every possible typo.
+   */
+  validate(data) {
+    if (!data || typeof data !== 'object' || Array.isArray(data)) return 'File is not a content object.';
+    for (const key of ['encounters', 'consumables', 'equipment', 'characters', 'zones']) {
+      if (data[key] !== undefined && !Array.isArray(data[key])) return `"${key}" must be a list.`;
+    }
+    if (!Array.isArray(data.encounters)) return 'Missing "encounters" list; this does not look like game content.';
+    const bad = data.encounters.find(e => !e || typeof e.id !== 'string' || !e.stats || typeof e.stats !== 'object');
+    if (bad) return 'An encounter is missing its id or stats.';
+    return null;
   },
 
   _migrateEncounters(data) {
