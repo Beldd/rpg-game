@@ -1,0 +1,343 @@
+{
+  "format": "arcadia-content",
+  "version": 1,
+  "build": "0.2.0",
+  "exportedAt": "2026-10-15T02:02:36.221Z",
+  "data": {
+    "encounters": [
+      {
+        "id": "slime_01",
+        "name": "Slime",
+        "type": "static",
+        "mapPosition": {
+          "tileX": 32,
+          "tileY": 10
+        },
+        "dungeonPosition": {
+          "tileX": 14,
+          "tileY": 10
+        },
+        "stats": {
+          "hp": 20,
+          "attackMin": 2,
+          "attackMax": 6,
+          "xpReward": 10,
+          "speed": 8
+        },
+        "abilities": [
+          {
+            "id": "basic_attack",
+            "name": "Attack",
+            "type": "attack",
+            "weight": 100,
+            "params": {
+              "damageMultiplier": 1,
+              "message": "{name} attacks {target} for {damage} damage!"
+            }
+          }
+        ],
+        "rewards": {
+          "dropPool": [
+            {
+              "name": "Potion",
+              "stackable": true,
+              "weight": 1
+            },
+            {
+              "name": "Antidote",
+              "stackable": true,
+              "weight": 1
+            },
+            {
+              "name": "Sword",
+              "slot": "primary",
+              "bonus": {
+                "attackMin": 3,
+                "attackMax": 3
+              },
+              "weight": 1
+            },
+            {
+              "name": "Shield",
+              "slot": "secondary",
+              "bonus": {
+                "defense": 3
+              },
+              "weight": 1
+            }
+          ],
+          "dropChance": 0.5
+        },
+        "dialogue": {
+          "challenge": "Halt, {interlopers}! You've ruined your own lands, you'll not ruin mine! I, {name}, will knock you all down!"
+        }
+      }
+    ],
+    "consumables": [
+      {
+        "id": "potion_01",
+        "name": "Potion",
+        "type": "consumable",
+        "effect": {
+          "type": "heal",
+          "minAmount": 15,
+          "maxAmount": 25
+        },
+        "startingQuantity": 3
+      },
+      {
+        "id": "antidote_01",
+        "name": "Antidote",
+        "type": "consumable",
+        "effect": null,
+        "startingQuantity": 1
+      }
+    ],
+    "equipment": [
+      {
+        "id": "sword_01",
+        "name": "Sword",
+        "slot": "primary",
+        "startingOwned": true,
+        "bonus": [
+          {
+            "stat": "attackMin",
+            "amount": 3
+          },
+          {
+            "stat": "attackMax",
+            "amount": 3
+          }
+        ]
+      },
+      {
+        "id": "shield_01",
+        "name": "Shield",
+        "slot": "secondary",
+        "startingOwned": true,
+        "bonus": [
+          {
+            "stat": "defense",
+            "amount": 3
+          }
+        ]
+      },
+      {
+        "id": "mail_01",
+        "name": "Mail",
+        "slot": "body",
+        "startingOwned": true,
+        "bonus": [
+          {
+            "stat": "defense",
+            "amount": 2
+          }
+        ]
+      },
+      {
+        "id": "helm_01",
+        "name": "Helm",
+        "slot": "head",
+        "startingOwned": true,
+        "bonus": [
+          {
+            "stat": "defense",
+            "amount": 2
+          }
+        ]
+      },
+      {
+        "id": "mace_01",
+        "name": "Mace",
+        "slot": "primary",
+        "startingOwned": true,
+        "bonus": [
+          {
+            "stat": "attackMin",
+            "amount": 3
+          },
+          {
+            "stat": "attackMax",
+            "amount": 3
+          }
+        ]
+      },
+      {
+        "id": "buckler_01",
+        "name": "Buckler",
+        "slot": "secondary",
+        "startingOwned": true,
+        "bonus": [
+          {
+            "stat": "defense",
+            "amount": 3
+          }
+        ]
+      },
+      {
+        "id": "robes_01",
+        "name": "Robes",
+        "slot": "body",
+        "startingOwned": true,
+        "bonus": [
+          {
+            "stat": "defense",
+            "amount": 2
+          }
+        ]
+      },
+      {
+        "id": "kippah_01",
+        "name": "Kippah",
+        "slot": "head",
+        "startingOwned": true,
+        "bonus": [
+          {
+            "stat": "defense",
+            "amount": 2
+          }
+        ]
+      }
+    ],
+    "zones": [
+      {
+        "id": "town",
+        "name": "Town",
+        "enabled": false,
+        "randomEncounters": []
+      },
+      {
+        "id": "overworld",
+        "name": "Overworld",
+        "enabled": true,
+        "randomEncounters": [
+          "slime_01"
+        ]
+      },
+      {
+        "id": "dungeon",
+        "name": "Dungeon",
+        "enabled": true,
+        "randomEncounters": [
+          "slime_01"
+        ]
+      }
+    ],
+    "characters": [
+      {
+        "id": "hero_01",
+        "name": "Hero",
+        "startingHp": 30,
+        "startingMp": 15,
+        "baseStats": {
+          "attackMin": 4,
+          "attackMax": 8,
+          "defense": 0,
+          "speed": 10
+        },
+        "spells": [
+          {
+            "id": "fire_01",
+            "name": "Fire",
+            "cost": 6,
+            "type": "offense",
+            "min": 8,
+            "max": 14
+          },
+          {
+            "id": "drain_01",
+            "name": "Drain",
+            "cost": 6,
+            "type": "drain",
+            "multiplier": 1.25,
+            "selfHealPercent": 0.2
+          },
+          {
+            "id": "expose_01",
+            "name": "Expose Weakness",
+            "cost": 3,
+            "type": "debuff",
+            "durationTurns": 3
+          }
+        ]
+      },
+      {
+        "id": "ally_01",
+        "name": "Ally",
+        "startingHp": 24,
+        "startingMp": 12,
+        "baseStats": {
+          "attackMin": 3,
+          "attackMax": 7,
+          "defense": 0,
+          "speed": 10
+        },
+        "spells": [
+          {
+            "id": "heal_01",
+            "name": "Heal",
+            "cost": 5,
+            "type": "heal",
+            "min": 10,
+            "max": 16
+          },
+          {
+            "id": "smite_01",
+            "name": "Smite",
+            "cost": 7,
+            "type": "attackMultiplier",
+            "multiplier": 2
+          }
+        ]
+      },
+      {
+        "id": "char_03",
+        "name": "Char3",
+        "startingHp": 40,
+        "startingMp": 6,
+        "baseStats": {
+          "attackMin": 4,
+          "attackMax": 8,
+          "defense": 3,
+          "speed": 6
+        },
+        "spells": []
+      },
+      {
+        "id": "char_04",
+        "name": "Char4",
+        "startingHp": 20,
+        "startingMp": 8,
+        "baseStats": {
+          "attackMin": 5,
+          "attackMax": 10,
+          "defense": 0,
+          "speed": 14
+        },
+        "spells": []
+      },
+      {
+        "id": "char_05",
+        "name": "Char5",
+        "startingHp": 16,
+        "startingMp": 20,
+        "baseStats": {
+          "attackMin": 2,
+          "attackMax": 4,
+          "defense": 0,
+          "speed": 8
+        },
+        "spells": [
+          {
+            "id": "fire2_01",
+            "name": "Fire",
+            "cost": 6,
+            "type": "offense",
+            "min": 12,
+            "max": 20
+          }
+        ]
+      }
+    ]
+  }
+}
