@@ -61,6 +61,21 @@ class TitleScene extends Phaser.Scene {
     this.cursors = this.input.keyboard.createCursorKeys();
     this.enterKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
 
+    // Build / content info: lets you tell at a glance which version and
+    // which content source (repo file, local editor override, defaults)
+    // you are looking at. The local override is highlighted because it
+    // is the one that silently differs from what other players see.
+    const src = EditorData.source();
+    const srcLabel = {
+      local: 'LOCAL EDITOR DATA',
+      repo: 'repo content',
+      defaults: 'built-in defaults',
+    }[src];
+    domText.create(width / 2, height - 14, `v${BUILD_INFO.version}  ·  ${srcLabel}`, {
+      fontSize: 6,
+      color: src === 'local' ? '#ff9966' : '#667788',
+    });
+
     this.cameras.main.fadeIn(400, 0, 0, 0);
     domText.fadeIn();
   }

@@ -295,6 +295,8 @@
   <h1>Fantasy of Arcadia</h1>
   <span class="topbar-tag">Design Tools</span>
   <div id="topbar-actions">
+    <span id="source-badge" style="align-self:center;font-size:11px;"></span>
+    <button class="btn btn-secondary btn-sm" onclick="resetToRepo()" title="Discard local edits and use game-content.json from the repo">Reset to repo content</button>
     <button class="btn btn-secondary btn-sm" onclick="exportContent()" title="Download game-content.json">Export</button>
     <button class="btn btn-secondary btn-sm" onclick="document.getElementById('import-file').click()" title="Replace all editor data with a game-content.json">Import</button>
     <input type="file" id="import-file" accept=".json,application/json" style="display:none" onchange="importContent(event)">
@@ -368,6 +370,7 @@
   <span id="status-msg">Ready.</span>
 </div>
 
+<script src="../src/buildInfo.js"></script>
 <script src="../src/editorData.js"></script>
 <script>
 /**
@@ -380,12 +383,34 @@
 
 // ── State ──────────────────────────────────────────────────────────
 let activeSection = 'encounters';
-let editorData = EditorData.load();
+let editorData = EditorData.load(); // placeholder until init() below finishes
 let selectedIndex = null; // index into editorData[activeSection]
 
 // ── Boot ───────────────────────────────────────────────────────────
-renderList();
-updateNavCounts();
+// The editor lives in /tools, so the content file is one level up.
+EditorData.CONTENT_URL = '../game-content.json';
+EditorData.init().then(() => {
+  editorData = EditorData.load();
+  renderList();
+  updateNavCounts();
+  updateSourceBadge();
+  setStatus(`Ready. Editor build v${BUILD_INFO.version}. Repo file: ${EditorData.repoStatus}.`, '');
+});
+
+/** Shows where the data currently in the editor came from. */
+function updateSourceBadge() {
+  const el = document.getElementById('source-badge');
+  const src = EditorData.source();
+  const text = {
+    local: 'Source: local edits (this browser only)',
+    repo: 'Source: repo file',
+    defaults: 'Source: built-in defaults',
+  }[src];
+  el.textContent = text;
+  el.style.color = src === 'local' ? '#ff9966' : '#8899aa';
+  el.title = `Repo file: ${EditorData.repoStatus}` +
+    (EditorData.repoMeta && EditorData.repoMeta.exportedAt ? `, exported ${EditorData.repoMeta.exportedAt}` : '');
+}
 
 // ── Section switching ──────────────────────────────────────────────
 function selectSection(section) {
@@ -1227,6 +1252,7 @@ function saveAll() {
   if (ok) {
     setStatus('Saved. Refresh the game to apply changes.', 'success');
     renderList(); // update counts
+    updateSourceBadge();
   } else {
     setStatus('Save failed — localStorage may be unavailable.', 'error');
   }
@@ -1239,7 +1265,24 @@ function resetToDefaults() {
   selectedIndex = null;
   renderList();
   showEmptyState();
-  setStatus('Reset to defaults.', 'success');
+  updateSourceBadge();
+  setStatus('Reset to defaults. (These are saved as local edits; use "Reset to repo content" to go back to the repo file.)', 'success');
+}
+
+function resetToRepo() {
+  if (!EditorData.repoContent) {
+    setStatus(`No repo file to reset to (${EditorData.repoStatus}).`, 'error');
+    return;
+  }
+  if (!confirm('Discard ALL local edits and go back to the repo file (game-content.json)?')) return;
+  EditorData.clearOverride();
+  editorData = EditorData.load();
+  selectedIndex = null;
+  renderList();
+  updateNavCounts();
+  showEmptyState();
+  updateSourceBadge();
+  setStatus('Local edits cleared. Now showing the repo file.', 'success');
 }
 
 // ── Export / import ────────────────────────────────────────────────
@@ -1249,6 +1292,7 @@ function exportContent() {
   const payload = {
     format: 'arcadia-content',
     version: 1,
+    build: BUILD_INFO.version,
     exportedAt: new Date().toISOString(),
     data: editorData,
   };

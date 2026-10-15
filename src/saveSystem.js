@@ -49,6 +49,7 @@ const SaveSystem = {
       party: GameState.party,
       inventory: GameState.inventory,
       savedAt: Date.now(),
+      gameVersion: (typeof BUILD_INFO !== 'undefined') ? BUILD_INFO.version : null, // for troubleshooting old saves
     };
 
     try {

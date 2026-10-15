@@ -26,4 +26,13 @@ const config = {
 };
 
 // Creating this instance starts the game loop immediately.
-const game = new Phaser.Game(config);
+// Fetch game-content.json first (never fails; falls back to built-in
+// defaults), then boot. Scenes read content synchronously, so it must
+// be in place before any scene's create() runs.
+let game;
+EditorData.init().then(() => {
+  console.log(`[Arcadia] v${BUILD_INFO.version} (${BUILD_INFO.label}) | content: ${EditorData.source()}` +
+    ` | repo file: ${EditorData.repoStatus}` +
+    (EditorData.repoMeta && EditorData.repoMeta.exportedAt ? ` (exported ${EditorData.repoMeta.exportedAt})` : ''));
+  game = new Phaser.Game(config);
+});
