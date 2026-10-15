@@ -192,15 +192,69 @@ const EditorData = {
     ],
   },
 
+  // ── Content sources ────────────────────────────────────────────────
+  // Priority, highest first:
+  //   1. 'local'    — the editor's localStorage override (this browser only)
+  //   2. 'repo'     — game-content.json fetched at boot (shared, versioned)
+  //   3. 'defaults' — the built-in data below (always available)
+  CONTENT_URL: 'game-content.json', // relative to the page; the editor overrides this
+  repoContent: null,                // validated + migrated contents of the file, once fetched
+  repoMeta: null,                   // { exportedAt, build } from the file's header
+  repoStatus: 'not loaded',         // human-readable result of the fetch, for troubleshooting
+
+  /**
+   * Fetches game-content.json once, before the game boots. Never rejects:
+   * any failure (missing file, offline, file:// page, bad JSON) leaves
+   * repoContent null so the game falls back to the built-in defaults.
+   * cache:'no-store' skips the browser cache so a fresh deploy is seen.
+   */
+  async init() {
+    try {
+      const res = await fetch(this.CONTENT_URL, { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const parsed = await res.json();
+      const wrapped = parsed && parsed.format === 'arcadia-content';
+      const data = wrapped ? parsed.data : parsed;
+      const problem = this.validate(data);
+      if (problem) throw new Error(problem);
+      this.repoContent = this.migrate(data);
+      this.repoMeta = wrapped ? { exportedAt: parsed.exportedAt || null, build: parsed.build || null } : {};
+      this.repoStatus = 'loaded';
+    } catch (err) {
+      this.repoContent = null;
+      this.repoMeta = null;
+      this.repoStatus = `unavailable (${err.message})`;
+      console.warn('[EditorData] game-content.json not used:', err.message);
+    }
+  },
+
+  hasLocalOverride() {
+    try { return localStorage.getItem(EDITOR_STORAGE_KEY) !== null; }
+    catch (err) { return false; }
+  },
+
+  /** Which source load() will use right now: 'local' | 'repo' | 'defaults'. */
+  source() {
+    if (this.hasLocalOverride()) return 'local';
+    return this.repoContent ? 'repo' : 'defaults';
+  },
+
+  /** Removes the local override so the repo file (or defaults) takes over again. */
+  clearOverride() {
+    try { localStorage.removeItem(EDITOR_STORAGE_KEY); return true; }
+    catch (err) { console.error('EditorData.clearOverride failed:', err); return false; }
+  },
+
   load() {
     try {
       const raw = localStorage.getItem(EDITOR_STORAGE_KEY);
-      if (!raw) return JSON.parse(JSON.stringify(this.defaults));
-      return this.migrate(JSON.parse(raw));
+      if (raw) return this.migrate(JSON.parse(raw));
     } catch (err) {
-      console.error('EditorData.load failed, returning defaults:', err);
-      return JSON.parse(JSON.stringify(this.defaults));
+      console.error('EditorData.load: local override unreadable, ignoring it:', err);
     }
+    // Deep copy so callers (the editor) can mutate without touching the cache.
+    const base = this.repoContent || this.defaults;
+    return JSON.parse(JSON.stringify(base));
   },
 
   /**
