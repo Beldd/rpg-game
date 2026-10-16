@@ -120,6 +120,10 @@ const GameState = {
   party: createDefaultParty(),
   inventory: createDefaultInventory(),
 
+  // Shared party currency. Earned from encounters (rewards.gold); nothing
+  // costs gold yet. Saved with each slot; older saves load with 0.
+  gold: 0,
+
   /**
    * Tracks which static dungeon encounters the player has defeated in the
    * current dungeon "run". Stored here (not on DungeonScene) so it survives
@@ -373,6 +377,7 @@ const GameState = {
   resetToNewGame() {
     this.party = createDefaultParty();
     this.inventory = createDefaultInventory();
+    this.gold = 0;
   },
 
   /**

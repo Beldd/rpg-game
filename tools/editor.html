@@ -458,7 +458,8 @@ function renderList() {
       const enc = item.randomEncounters || [];
       sub = `${item.enabled ? '✅ enabled' : '⛔ disabled'} · ${enc.length} encounter${enc.length === 1 ? '' : 's'}`;
     } else {
-      sub = `ID: ${escHtml(item.id)}`;
+      const tier = item.tier && item.tier !== 'regular' ? ` · ${item.tier.toUpperCase()}` : '';
+      sub = `ID: ${escHtml(item.id)}${tier}`;
     }
     return `
     <div class="list-item ${selectedIndex === i ? 'active' : ''}" onclick="selectItem(${i})">
@@ -654,8 +655,30 @@ function renderEncounterForm(enc, index) {
             <option value="random" ${!isStatic ? 'selected' : ''}>Random</option>
           </select>
         </div>
+        <div class="form-field" style="max-width:140px;">
+          <label>Tier</label>
+          <select onchange="updateField(${index}, 'tier', this.value)">
+            ${['regular', 'rare', 'elite', 'boss'].map(t =>
+              `<option value="${t}" ${(enc.tier || 'regular') === t ? 'selected' : ''}>${t[0].toUpperCase() + t.slice(1)}</option>`).join('')}
+          </select>
+          <span class="field-hint">Label only for now; set stats by hand</span>
+        </div>
       </div>
       ${isStatic ? `
+      <div class="form-row">
+        <div class="form-field">
+          <label>Appears on</label>
+          <div style="display:flex;gap:18px;padding-top:4px;">
+            ${[['map', 'Main map'], ['dungeon', 'Dungeon']].map(([id, label]) => `
+              <label style="display:flex;gap:6px;align-items:center;text-transform:none;letter-spacing:0;">
+                <input type="checkbox" style="width:auto;" ${(enc.appearsIn || ['map', 'dungeon']).includes(id) ? 'checked' : ''}
+                  onchange="toggleAppearsIn(${index}, '${id}', this.checked)" />
+                ${label}
+              </label>`).join('')}
+          </div>
+          <span class="field-hint">Where this encounter is placed. Tile positions below only apply to maps that are checked.</span>
+        </div>
+      </div>
       <div class="form-row" id="map-position-row">
         <div class="form-field" style="max-width:120px;">
           <label>Map tile X</label>
@@ -668,7 +691,7 @@ function renderEncounterForm(enc, index) {
             onchange="updateMapPosition(${index}, 'tileY', +this.value)" />
         </div>
         <div class="form-field" style="justify-content:flex-end;padding-top:20px;">
-          <span class="field-hint">Tile coordinates on the overworld map</span>
+          <span class="field-hint">Tile coordinates on the main map (town and surroundings)</span>
         </div>
       </div>
       <div class="form-row" id="dungeon-position-row">
@@ -724,6 +747,11 @@ function renderEncounterForm(enc, index) {
     </div>
 
     <div class="form-section">
+      <div class="form-section-title">Sprite</div>
+      ${spritePickerHtml(enc, index)}
+    </div>
+
+    <div class="form-section">
       <div class="form-section-title">Abilities</div>
       <div class="field-hint" style="margin-bottom:10px;">Each turn, the enemy picks one ability using weighted random selection. Weight is relative — e.g. 70 vs 30 means 70% vs 30%. Basic attack should have weight 100 if it's the only ability.</div>
       <div id="abilities-list">${abilitiesHtml || '<div style="color:#4a4a68;font-size:12px;padding:8px 0;">No abilities defined. Add at least one basic attack.</div>'}</div>
@@ -744,6 +772,12 @@ function renderEncounterForm(enc, index) {
     <div class="form-section">
       <div class="form-section-title">Rewards</div>
       <div class="form-row">
+        <div class="form-field" style="max-width:160px;">
+          <label>Gold</label>
+          <input type="number" min="0" step="1" value="${enc.rewards.gold || 0}"
+            onchange="updateReward(${index}, 'gold', Math.max(0, Math.floor(+this.value || 0)))" />
+          <span class="field-hint">Awarded to the party on victory</span>
+        </div>
         <div class="form-field" style="max-width:160px;">
           <label>Drop chance (0–1)</label>
           <input type="number" min="0" max="1" step="0.05" value="${enc.rewards.dropChance}"
@@ -775,6 +809,74 @@ function updateField(index, field, value) {
   markDirty();
 }
 
+// ── Sprite picker ──────────────────────────────────────────────────
+// Shows the whole sheet enlarged; clicking a tile stores its frame index.
+const SPRITE_PICKER_ZOOM = 3;
+
+let spritePickerSheetId = null; // which sheet the picker is browsing (remembered across encounters)
+
+function spritePickerHtml(enc, index) {
+  const sheetIds = Object.keys(EditorData.SPRITE_SHEETS);
+  // Browse the sheet the encounter already uses; otherwise the last one browsed.
+  const sheetId = EditorData.isValidSprite(enc.sprite) ? enc.sprite.sheet
+    : (EditorData.SPRITE_SHEETS[spritePickerSheetId] ? spritePickerSheetId : sheetIds[0]);
+  spritePickerSheetId = sheetId;
+  const sheet = EditorData.SPRITE_SHEETS[sheetId];
+  const sheetSelect = sheetIds.length > 1 ? `
+    <select style="max-width:240px;margin-bottom:8px;" onchange="spritePickerSheetId=this.value;renderForm()">
+      ${sheetIds.map(id => `<option value="${id}" ${id === sheetId ? 'selected' : ''}>${escHtml(EditorData.SPRITE_SHEETS[id].label)}</option>`).join('')}
+    </select>` : '';
+  const z = SPRITE_PICKER_ZOOM;
+  const w = sheet.cols * sheet.frameWidth * z;
+  const h = sheet.rows * sheet.frameHeight * z;
+  const url = '../' + sheet.path;
+  const cur = (EditorData.isValidSprite(enc.sprite) && enc.sprite.sheet === sheetId) ? enc.sprite.frame : null;
+
+  let selBox = '';
+  let preview = '<span class="field-hint">No sprite chosen: battle and map use the generic placeholder.</span>';
+  if (cur !== null) {
+    const col = cur % sheet.cols, row = Math.floor(cur / sheet.cols);
+    selBox = `<div style="position:absolute;left:${col * sheet.frameWidth * z}px;top:${row * sheet.frameHeight * z}px;
+      width:${sheet.frameWidth * z}px;height:${sheet.frameHeight * z}px;box-sizing:border-box;
+      border:2px solid #ffdd44;pointer-events:none;"></div>`;
+    preview = `<div style="width:${sheet.frameWidth * 4}px;height:${sheet.frameHeight * 4}px;
+      background:url('${url}') -${col * sheet.frameWidth * 4}px -${row * sheet.frameHeight * 4}px / ${sheet.cols * sheet.frameWidth * 4}px ${sheet.rows * sheet.frameHeight * 4}px no-repeat;
+      image-rendering:pixelated;border:1px solid #2a2a4a;"></div>
+      <span class="field-hint">Frame ${cur} (row ${row}, col ${col})</span>`;
+  }
+
+  return `
+    ${sheetSelect}
+    <div class="field-hint" style="margin-bottom:8px;">${escHtml(sheet.label)}: click a tile. Used in battle and on the map.</div>
+    <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
+      <div style="position:relative;width:${w}px;height:${h}px;background:#0a0a1a url('${url}') 0 0 / ${w}px ${h}px no-repeat;
+        image-rendering:pixelated;cursor:pointer;border:1px solid #2a2a4a;"
+        onclick="pickSpriteFrame(event, ${index}, '${sheetId}')">${selBox}</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">
+        ${preview}
+        <button class="btn btn-secondary btn-sm" onclick="clearSprite(${index})">Use placeholder</button>
+      </div>
+    </div>`;
+}
+
+function pickSpriteFrame(event, index, sheetId) {
+  const sheet = EditorData.SPRITE_SHEETS[sheetId];
+  const rect = event.currentTarget.getBoundingClientRect();
+  const z = SPRITE_PICKER_ZOOM;
+  const col = Math.floor((event.clientX - rect.left) / (sheet.frameWidth * z));
+  const row = Math.floor((event.clientY - rect.top) / (sheet.frameHeight * z));
+  if (col < 0 || col >= sheet.cols || row < 0 || row >= sheet.rows) return;
+  editorData[activeSection][index].sprite = { sheet: sheetId, frame: row * sheet.cols + col };
+  markDirty();
+  renderForm();
+}
+
+function clearSprite(index) {
+  editorData[activeSection][index].sprite = null;
+  markDirty();
+  renderForm();
+}
+
 function updateEncounterType(index, value) {
   editorData[activeSection][index].type = value;
   if (value === 'random') {
@@ -792,6 +894,15 @@ function updateMapPosition(index, axis, value) {
   }
   editorData[activeSection][index].mapPosition[axis] = value;
   markDirty();
+}
+
+function toggleAppearsIn(index, mapId, checked) {
+  const enc = editorData[activeSection][index];
+  const set = new Set(enc.appearsIn || ['map', 'dungeon']);
+  if (checked) set.add(mapId); else set.delete(mapId);
+  enc.appearsIn = [...set];
+  markDirty();
+  renderForm();
 }
 
 function updateDungeonPosition(index, axis, value) {
@@ -1183,7 +1294,10 @@ function createNew() {
           },
         },
       ],
-      rewards: { dropPool: [], dropChance: 0.5 },
+      rewards: { dropPool: [], dropChance: 0.5, gold: 0 },
+      tier: 'regular',
+      sprite: null,
+      appearsIn: ['map', 'dungeon'],
       dialogue: { challenge: "Halt, {interlopers}! I am {name}, and I will not let you pass!" },
     };
   } else if (activeSection === 'consumables') {

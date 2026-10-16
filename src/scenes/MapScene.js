@@ -97,9 +97,9 @@ class MapScene extends Phaser.Scene {
     // Also load the same sheet as a spritesheet so individual tiles can be
     // used as NPC/character sprites via frame index. 16×16 tiles, no margin
     // or spacing — matches the tilemap_packed layout exactly.
-    this.load.spritesheet('characters', 'assets/kenny/tiny_dungeon/Tilemap/tilemap_packed.png', {
-      frameWidth: 16, frameHeight: 16,
-    });
+    // Loaded through the shared sheet registry (texture key 'characters',
+    // same as before) so encounter sprites and the NPC use one source.
+    EditorData.preloadSheets(this);
 
     // 2. The map JSON describing which tile goes where
     //    'tilemapTiledJSON' tells Phaser to parse it as Tiled-format data
@@ -133,6 +133,7 @@ class MapScene extends Phaser.Scene {
     // this position?" for collision checks.
     this.groundLayer = map.createLayer('ground', tileset, 0, 0);
     this.map = map;
+    this._loadMapObjects(map);
 
     // --- Player setup ---
     // Default start position: town plaza (clear floor, away from buildings).
@@ -186,11 +187,17 @@ class MapScene extends Phaser.Scene {
     // This replaces the single hardcoded enemyTileX/Y pair — any
     // number of encounters can now be placed via the editor without
     // touching this code.
-    this.staticEncounters = EditorData.getStaticEncounters().map(enc => ({
+    this.staticEncounters = EditorData.getStaticEncountersFor('map').map(enc => ({
       id: enc.id,
       tileX: enc.mapPosition.tileX,
       tileY: enc.mapPosition.tileY,
-      sprite: this.add.image(
+      // The encounter's chosen sprite if it has one, else the placeholder.
+      sprite: EditorData.makeSpriteImage(
+        this,
+        enc.mapPosition.tileX * this.TILE_SIZE + this.TILE_SIZE / 2,
+        enc.mapPosition.tileY * this.TILE_SIZE + this.TILE_SIZE / 2,
+        enc.sprite
+      ) || this.add.image(
         enc.mapPosition.tileX * this.TILE_SIZE + this.TILE_SIZE / 2,
         enc.mapPosition.tileY * this.TILE_SIZE + this.TILE_SIZE / 2,
         'enemy'
@@ -211,7 +218,7 @@ class MapScene extends Phaser.Scene {
     // row 7 on the 12×11 tilemap_packed spritesheet (purple-robed wizard).
     // NPC_TILE is the wizard's own tile — interaction fires when the player
     // is on any of the 8 surrounding tiles and presses Enter.
-    this.NPC_TILE = { x: 35, y: 21 };
+    this.NPC_TILE = this._mapObjects.npc || { x: 35, y: 21 };
     this.npcSprite = this.add.image(
       this.NPC_TILE.x * this.TILE_SIZE + this.TILE_SIZE / 2,
       this.NPC_TILE.y * this.TILE_SIZE + this.TILE_SIZE / 2,
@@ -233,7 +240,12 @@ class MapScene extends Phaser.Scene {
     this.dialogueBoxBg = this.add.rectangle(width / 2, dialogueBoxY, dialogueBoxW, dialogueBoxH, 0x000000, 0.85)
       .setOrigin(0.5)
       .setScrollFactor(0)   // stays fixed on screen regardless of camera position
+      .setDepth(100)        // above room covers (depth 1) so dialogue is never hidden
       .setVisible(false);
+
+    // Building interiors: cover each room until the player steps in.
+    this._setupRooms();
+    this._updateRooms(this.playerTileX, this.playerTileY);
 
     this.dialogueTextEl = domText.create(width / 2, dialogueBoxY - 14, '', {
       fontSize: 12,
@@ -317,8 +329,90 @@ class MapScene extends Phaser.Scene {
    * plus some surrounding grass buffer. Adjust as the map grows.
    */
   _getZoneForTile(tileX, tileY) {
-    if (tileX <= 44 && tileY <= 23) return 'town';
+    // Zone rectangles come from the Tiled "objects" layer (type "zone",
+    // property zone=<id>). Anything outside every rectangle is overworld.
+    for (const z of this._mapObjects.zones) {
+      if (tileX >= z.x1 && tileX <= z.x2 && tileY >= z.y1 && tileY <= z.y2) return z.zone;
+    }
     return 'overworld';
+  }
+
+  /**
+   * Creates one black cover per room. Covers sit at depth 1: above the
+   * map, enemies and NPCs (depth 0) so everything inside is hidden, and
+   * below the dialogue box (depth 100). The player is never under a cover
+   * because a room is revealed before the player moves into it.
+   */
+  _setupRooms() {
+    const T = this.TILE_SIZE;
+    this._roomCovers = this._mapObjects.rooms.map(r => ({
+      room: r,
+      cover: this.add.rectangle(r.x1 * T, r.y1 * T, (r.x2 - r.x1 + 1) * T, (r.y2 - r.y1 + 1) * T, 0x000000, 1)
+        .setOrigin(0, 0)
+        .setDepth(1),
+    }));
+  }
+
+  /**
+   * Shows a room while the player is inside it or standing in its doorway,
+   * and covers it again otherwise. Called with the tile the player is about
+   * to occupy (at the start of a move), so the room is revealed before the
+   * player slides into it and hidden as soon as they step out.
+   */
+  _updateRooms(tileX, tileY) {
+    for (const { room, cover } of this._roomCovers) {
+      const inside = tileX >= room.x1 && tileX <= room.x2 && tileY >= room.y1 && tileY <= room.y2;
+      const inDoorway = this._mapObjects.doors.some(d =>
+        d.room === room.name && d.tiles.some(t => t.x === tileX && t.y === tileY));
+      cover.setVisible(!(inside || inDoorway));
+    }
+  }
+
+  /**
+   * Reads the Tiled object layer "objects" into tile coordinates:
+   *   zones  – rectangles (type "zone", property zone)
+   *   doors  – rectangles (type "door", property target) -> list of tiles
+   *   rooms  – rectangles (type "room"): interiors hidden until entered.
+   *            A door (property target="room", room=<name>) marks the
+   *            doorway tiles that reveal that room.
+   *   npc    – point (type "npc") -> tile
+   * Falls back to the original hard-coded values if the layer is missing,
+   * so an older map.json still plays the same.
+   */
+  _loadMapObjects(map) {
+    const T = this.TILE_SIZE || 16;
+    const out = {
+      zones: [{ zone: 'town', x1: 0, y1: 0, x2: 44, y2: 23 }],
+      doors: [{ target: 'dungeon', tiles: [{ x: 31, y: 20 }, { x: 32, y: 20 }, { x: 33, y: 20 }] }],
+      rooms: [],
+      npc: null,
+    };
+    const layer = map.getObjectLayer && map.getObjectLayer('objects');
+    if (layer && layer.objects) {
+      const zones = [], doors = [];
+      const prop = (o, n) => { const p = (o.properties || []).find(q => q.name === n); return p ? p.value : undefined; };
+      for (const o of layer.objects) {
+        if (o.type === 'zone' && o.width) {
+          zones.push({ zone: prop(o, 'zone') || o.name,
+            x1: Math.floor(o.x / T), y1: Math.floor(o.y / T),
+            x2: Math.ceil((o.x + o.width) / T) - 1, y2: Math.ceil((o.y + o.height) / T) - 1 });
+        } else if (o.type === 'door' && o.width) {
+          const tiles = [];
+          for (let ty = Math.floor(o.y / T); ty < Math.ceil((o.y + o.height) / T); ty++)
+            for (let tx = Math.floor(o.x / T); tx < Math.ceil((o.x + o.width) / T); tx++) tiles.push({ x: tx, y: ty });
+          doors.push({ target: prop(o, 'target') || o.name, room: prop(o, 'room'), tiles });
+        } else if (o.type === 'room' && o.width) {
+          out.rooms.push({ name: o.name,
+            x1: Math.floor(o.x / T), y1: Math.floor(o.y / T),
+            x2: Math.ceil((o.x + o.width) / T) - 1, y2: Math.ceil((o.y + o.height) / T) - 1 });
+        } else if (o.type === 'npc') {
+          out.npc = { x: Math.floor(o.x / T), y: Math.floor(o.y / T) };
+        }
+      }
+      if (zones.length) out.zones = zones;
+      if (doors.length) out.doors = doors;
+    }
+    this._mapObjects = out;
   }
 
   /**
@@ -435,8 +529,8 @@ class MapScene extends Phaser.Scene {
 
     // Check dungeon entrance trigger — stepping onto the door tiles
     // at the south face of the dungeon building transitions to DungeonScene.
-    const DUNGEON_DOOR = [{ x: 31, y: 20 }, { x: 32, y: 20 }, { x: 33, y: 20 }];
-    if (DUNGEON_DOOR.some(t => t.x === targetTileX && t.y === targetTileY)) {
+    const dungeonDoor = this._mapObjects.doors.find(d => d.target === 'dungeon');
+    if (dungeonDoor && dungeonDoor.tiles.some(t => t.x === targetTileX && t.y === targetTileY)) {
       this.enterDungeon();
       return;
     }
@@ -461,6 +555,7 @@ class MapScene extends Phaser.Scene {
     this.isMoving = true;
     this.playerTileX = targetTileX;
     this.playerTileY = targetTileY;
+    this._updateRooms(targetTileX, targetTileY);
 
     // Animate the slide from current pixel position to the new tile's
     // pixel position over a short duration, rather than teleporting —

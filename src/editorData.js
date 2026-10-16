@@ -31,6 +31,59 @@
 const EDITOR_STORAGE_KEY = 'rpg-editor-data';
 
 const EditorData = {
+  /**
+   * Sprite sheets that encounters can pick frames from. An encounter's
+   * `sprite` is { sheet: <id from here>, frame: <index> } or null (null =
+   * the generic placeholder). `path` is relative to index.html; the editor
+   * prefixes "../". `textureKey` is the Phaser texture name the game uses.
+   * Adding a sheet here makes it available to the loader; the editor's
+   * picker currently shows only the first one.
+   */
+  SPRITE_SHEETS: {
+    tiny_dungeon: {
+      label: 'Kenney Tiny Dungeon',
+      path: 'assets/kenny/tiny_dungeon/Tilemap/tilemap_packed.png',
+      textureKey: 'characters',
+      frameWidth: 16,
+      frameHeight: 16,
+      cols: 12,
+      rows: 11,
+    },
+  },
+
+  /** True if `sprite` points at a real frame of a registered sheet. */
+  isValidSprite(sprite) {
+    if (!sprite || typeof sprite !== 'object') return false;
+    const sheet = this.SPRITE_SHEETS[sprite.sheet];
+    return !!sheet && Number.isInteger(sprite.frame) &&
+      sprite.frame >= 0 && sprite.frame < sheet.cols * sheet.rows;
+  },
+
+  /** Queues every registered sheet for loading; skips ones already loaded. Call from a scene's preload(). */
+  preloadSheets(scene) {
+    Object.values(this.SPRITE_SHEETS).forEach(sheet => {
+      if (!scene.textures.exists(sheet.textureKey)) {
+        scene.load.spritesheet(sheet.textureKey, sheet.path, {
+          frameWidth: sheet.frameWidth, frameHeight: sheet.frameHeight,
+        });
+      }
+    });
+  },
+
+  /**
+   * Adds an image for `sprite` ({sheet, frame}) to `scene` at x,y, or returns
+   * null if the sprite is unset, invalid, or its texture/frame isn't loaded.
+   * Callers fall back to their own placeholder on null, so bad content never
+   * breaks a scene.
+   */
+  makeSpriteImage(scene, x, y, sprite) {
+    if (!this.isValidSprite(sprite)) return null;
+    const sheet = this.SPRITE_SHEETS[sprite.sheet];
+    if (!scene.textures.exists(sheet.textureKey)) return null;
+    if (!scene.textures.get(sheet.textureKey).has(sprite.frame)) return null;
+    return scene.add.image(x, y, sheet.textureKey, sprite.frame);
+  },
+
   defaults: {
     encounters: [
       {
@@ -302,6 +355,14 @@ const EditorData = {
         enc.abilities = JSON.parse(JSON.stringify(defaultEnc.abilities));
       }
       if (enc.stats.speed === undefined) enc.stats.speed = 8;
+      if (!['regular', 'rare', 'elite', 'boss'].includes(enc.tier)) enc.tier = 'regular';
+      if (!this.isValidSprite(enc.sprite)) enc.sprite = null;
+      // Which maps a static encounter appears on. Missing = both, which is
+      // what happened before this field existed, so old content is unchanged.
+      if (!Array.isArray(enc.appearsIn)) enc.appearsIn = ['map', 'dungeon'];
+      enc.appearsIn = enc.appearsIn.filter(m => m === 'map' || m === 'dungeon');
+      if (!enc.rewards) enc.rewards = { dropPool: [], dropChance: 0.5 };
+      if (!Number.isFinite(enc.rewards.gold)) enc.rewards.gold = 0;
     });
   },
 
@@ -376,6 +437,16 @@ const EditorData = {
   getStaticEncounters() {
     const data = this.load();
     return data.encounters.filter(e => e.type === 'static');
+  },
+
+  /**
+   * Static encounters placed on the given map: 'map' (MapScene) or
+   * 'dungeon' (DungeonScene). Defaults to both when appearsIn is absent
+   * (e.g. the built-in defaults, which skip migration).
+   */
+  getStaticEncountersFor(mapId) {
+    return this.getStaticEncounters().filter(e =>
+      !Array.isArray(e.appearsIn) || e.appearsIn.includes(mapId));
   },
 
   getEncounter(id) {

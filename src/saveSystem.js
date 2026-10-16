@@ -48,6 +48,7 @@ const SaveSystem = {
     const snapshot = {
       party: GameState.party,
       inventory: GameState.inventory,
+      gold: GameState.gold || 0,
       savedAt: Date.now(),
       gameVersion: (typeof BUILD_INFO !== 'undefined') ? BUILD_INFO.version : null, // for troubleshooting old saves
     };
@@ -92,6 +93,7 @@ const SaveSystem = {
 
     GameState.party = snapshot.party;
     GameState.inventory = snapshot.inventory;
+    GameState.gold = Number.isFinite(snapshot.gold) ? snapshot.gold : 0; // saves from before gold existed
 
     // Forward-migration: add row field to party members saved before
     // front/back row was added. Preserve existing row values if present

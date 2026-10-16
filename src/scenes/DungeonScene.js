@@ -59,6 +59,7 @@ class DungeonScene extends Phaser.Scene {
     this.load.tilemapTiledJSON('dungeon', 'assets/dungeon.json');
     this.load.image('player', 'assets/player.png');
     this.load.image('enemy', 'assets/enemy.png');
+    EditorData.preloadSheets(this); // encounter sprites (skipped if MapScene already loaded them)
   }
 
   create() {
@@ -147,14 +148,13 @@ class DungeonScene extends Phaser.Scene {
     // Build static encounter list. Encounters already in GameState.dungeonDefeatedIds
     // are spawned with their sprite hidden (defeated this run) so the player can't
     // re-trigger them until the dungeon is reset.
-    this.staticEncounters = EditorData.getStaticEncounters().map(enc => {
+    this.staticEncounters = EditorData.getStaticEncountersFor('dungeon').map(enc => {
       const pos = enc.dungeonPosition || enc.mapPosition;
       const defeated = GameState.dungeonDefeatedIds.has(enc.id);
-      const sprite = this.add.image(
-        pos.tileX * this.TILE_SIZE + this.TILE_SIZE / 2,
-        pos.tileY * this.TILE_SIZE + this.TILE_SIZE / 2,
-        'enemy'
-      ).setVisible(!defeated);
+      const px = pos.tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
+      const py = pos.tileY * this.TILE_SIZE + this.TILE_SIZE / 2;
+      const sprite = (EditorData.makeSpriteImage(this, px, py, enc.sprite) || this.add.image(px, py, 'enemy'))
+        .setVisible(!defeated);
       return {
         id: enc.id,
         tileX: pos.tileX,

@@ -9,8 +9,8 @@
   "type": "map",
   "version": "1.10",
   "infinite": false,
-  "nextlayerid": 2,
-  "nextobjectid": 1,
+  "nextlayerid": 3,
+  "nextobjectid": 6,
   "layers": [
     {
       "id": 1,
@@ -1223,6 +1223,107 @@
         0,
         0,
         0
+      ]
+    },
+    {
+      "id": 2,
+      "name": "objects",
+      "type": "objectgroup",
+      "draworder": "topdown",
+      "opacity": 1,
+      "visible": true,
+      "x": 0,
+      "y": 0,
+      "objects": [
+        {
+          "id": 1,
+          "name": "town",
+          "type": "zone",
+          "x": 0,
+          "y": 0,
+          "width": 640,
+          "height": 384,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "zone",
+              "type": "string",
+              "value": "town"
+            }
+          ]
+        },
+        {
+          "id": 2,
+          "name": "dungeon_door",
+          "type": "door",
+          "x": 496,
+          "y": 320,
+          "width": 48,
+          "height": 16,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "target",
+              "type": "string",
+              "value": "dungeon"
+            }
+          ]
+        },
+        {
+          "id": 3,
+          "name": "wizard",
+          "type": "npc",
+          "x": 568,
+          "y": 344,
+          "width": 0,
+          "height": 0,
+          "point": true,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "npc",
+              "type": "string",
+              "value": "wizard"
+            }
+          ]
+        },
+        {
+          "id": 4,
+          "name": "house_1",
+          "type": "room",
+          "x": 48,
+          "y": 48,
+          "width": 96,
+          "height": 96,
+          "rotation": 0,
+          "visible": true
+        },
+        {
+          "id": 5,
+          "name": "house_1_door",
+          "type": "door",
+          "x": 80,
+          "y": 144,
+          "width": 32,
+          "height": 16,
+          "rotation": 0,
+          "visible": true,
+          "properties": [
+            {
+              "name": "target",
+              "type": "string",
+              "value": "room"
+            },
+            {
+              "name": "room",
+              "type": "string",
+              "value": "house_1"
+            }
+          ]
+        }
       ]
     }
   ],

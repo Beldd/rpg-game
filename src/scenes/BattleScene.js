@@ -26,6 +26,13 @@ class BattleScene extends Phaser.Scene {
     this.returnData   = (data && data.returnData)   ? data.returnData   : null;
   }
 
+  preload() {
+    // Normally already loaded by MapScene/DungeonScene; this guards against
+    // starting a battle from a scene that didn't load the sprite sheets.
+    EditorData.preloadSheets(this);
+    if (!this.textures.exists('enemy')) this.load.image('enemy', 'assets/enemy.png');
+  }
+
   create() {
     const { width, height } = this.cameras.main;
     this.party = GameState.party;
@@ -41,6 +48,9 @@ class BattleScene extends Phaser.Scene {
       speed:      encounterDef ? (encounterDef.stats.speed || 8)  : 8,
       dropPool:   encounterDef ? encounterDef.rewards.dropPool    : null,
       dropChance: encounterDef ? encounterDef.rewards.dropChance  : 0.5,
+      sprite:     encounterDef ? (encounterDef.sprite || null) : null,
+      tier:       encounterDef ? (encounterDef.tier || 'regular') : 'regular',
+      gold:       encounterDef ? (encounterDef.rewards.gold || 0) : 0,
       abilities:  encounterDef ? encounterDef.abilities           : [],
       exposeWeaknessTurns: 0,
       activeBuffs: [],
@@ -74,7 +84,7 @@ class BattleScene extends Phaser.Scene {
     // ── Enemy area (left panel) ─────────────────────────────────────
     const enemyCenterX = 77;
     const enemyCenterY = 90;
-    this.enemySprite = this.add.image(enemyCenterX, enemyCenterY, 'enemy').setScale(2.5);
+    this.enemySprite = this._createEnemySprite(enemyCenterX, enemyCenterY);
 
     // Enemy name
     domText.create(enemyCenterX, 45, this.enemy.name,
@@ -232,6 +242,20 @@ class BattleScene extends Phaser.Scene {
     return wasModified
       ? `${rawDamage} -> ${finalDamage} damage (Exposed)`
       : `${finalDamage} damage`;
+  }
+
+  /**
+   * Builds the enemy image: the encounter's chosen sheet frame if it is
+   * valid and loaded, otherwise the generic placeholder. Never throws, so
+   * a bad sprite entry in content can't break a battle.
+   */
+  _createEnemySprite(x, y) {
+    const SPRITE_SCALE = 4;       // sheet frames are 16px, so 64px on screen
+    const PLACEHOLDER_SCALE = 2.5;
+    const img = EditorData.makeSpriteImage(this, x, y, this.enemy.sprite);
+    if (img) return img.setScale(SPRITE_SCALE);
+    if (this.enemy.sprite) console.warn('[BattleScene] enemy sprite unavailable; using placeholder.', this.enemy.sprite);
+    return this.add.image(x, y, 'enemy').setScale(PLACEHOLDER_SCALE);
   }
 
   /**
@@ -663,6 +687,10 @@ class BattleScene extends Phaser.Scene {
       ? GameState.rollForDropFromPool(this.enemy.dropPool, this.enemy.dropChance)
       : GameState.rollForDrop();
 
+    // Gold must be added BEFORE the autosave below so it is included.
+    const goldEarned = Math.max(0, Math.floor(this.enemy.gold || 0));
+    GameState.gold = (GameState.gold || 0) + goldEarned;
+
     SaveSystem.saveToSlot(SaveSystem.AUTO_SAVE_SLOT);
 
     domText.setText(this.messageTextEl, `${this.enemy.name} defeated!`);
@@ -671,6 +699,10 @@ class BattleScene extends Phaser.Scene {
     });
 
     let next = 2200;
+    if (goldEarned > 0) {
+      this.time.delayedCall(next, () => domText.setText(this.messageTextEl, `Found ${goldEarned} gold!`));
+      next += 1800;
+    }
     if (dropped) {
       this.time.delayedCall(next, () => domText.setText(this.messageTextEl, `Found a ${dropped}!`));
       next += 1800;

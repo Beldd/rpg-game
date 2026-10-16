@@ -448,6 +448,10 @@ class OverlayScene extends Phaser.Scene {
       );
     }
 
+    this.overlayEls.push(
+      domText.menu(SX, 116, `Gold ${GameState.gold || 0}`, { fontSize: 8, color: '#ddbb44', align: 'left' })
+    );
+
     const hint = sidebarFocused ? '↑↓ Enter' : '← Esc back';
     this.overlayEls.push(
       domText.menu(SX, 128, hint, { fontSize: 7, color: '#2a3a4a', align: 'left' })
