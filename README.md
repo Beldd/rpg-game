@@ -44,10 +44,10 @@ An internet connection is needed for the Phaser CDN.
 
 | Area | Today |
 |---|---|
-| Exploration | A town map and a dungeon, grid movement, one NPC |
+| Exploration | A town with an inn, shop and hospital (hidden interiors), a dungeon, grid movement |
 | Encounters | Static (visible enemy you can challenge) and random (per-zone step counter) |
 | Battle | Round-based: Attack, Magic, Defend, Change Row, Flee; party of up to five |
-| Progression | XP and levels, item drops, gold rewards |
+| Progression | XP and levels, item drops, gold rewards, gold spent at the inn, shop and hospital |
 | Menus | Party, Equip, Items, Save/Load |
 | Saving | Three slots plus an autosave after each victory |
 | Content tool | The editor above |

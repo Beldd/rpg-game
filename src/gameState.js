@@ -434,4 +434,68 @@ const GameState = {
   addToInventory(item) {
     this.inventory.push(item);
   },
+
+  // ── Town services (inn, shop, hospital) ──────────────────────────────
+  // Pure state changes with no UI, so they can be tested without a browser.
+  // Prices live on the NPC objects in the map (see MapScene), not here.
+
+  /** Takes `amount` gold if the party has it. Returns true if it was paid. */
+  spendGold(amount) {
+    if (!Number.isFinite(amount) || amount < 0 || this.gold < amount) return false;
+    this.gold -= amount;
+    return true;
+  },
+
+  /** Living members whose HP or MP is below max (the inn does not revive). */
+  membersNeedingRest() {
+    return this.party.filter(m => m.hp > 0 && (m.hp < m.maxHp || m.mp < m.maxMp));
+  },
+
+  /** Sets HP and MP to max for every living member. Returns who was restored. */
+  restParty() {
+    const rested = this.membersNeedingRest();
+    rested.forEach(m => { m.hp = m.maxHp; m.mp = m.maxMp; });
+    return rested;
+  },
+
+  /** Members at 0 HP (the hospital's customers). */
+  downedMembers() {
+    return this.party.filter(m => m.hp <= 0);
+  },
+
+  /** Brings a member at 0 HP back to 1 HP. Returns false if they weren't down. */
+  reviveMember(member) {
+    if (!member || member.hp > 0) return false;
+    member.hp = 1;
+    return true;
+  },
+
+  /** True if `name` is a consumable or a piece of equipment in the content. */
+  isKnownItem(name) {
+    return !!(EditorData.getConsumableByName(name) || EditorData.getEquipmentByName(name));
+  },
+
+  /**
+   * Buys one `name` for `price`. Returns 'ok', 'broke' (cannot afford, nothing
+   * taken) or 'unknown' (not an item in the content, nothing taken). Equipment
+   * is added with its slot and bonus, like a drop, so it can be equipped.
+   */
+  buyItem(name, price) {
+    if (!this.isKnownItem(name)) return 'unknown';
+    if (!this.spendGold(price)) return 'broke';
+    const equip = EditorData.getEquipmentByName(name);
+    if (equip) {
+      this.inventory.push({ name, quantity: 1, slot: equip.slot, bonus: equip.bonus });
+    } else {
+      this.addConsumable(name, 1);
+    }
+    return 'ok';
+  },
+
+  /** Adds `quantity` of a stackable item to the inventory (same shape as drops). */
+  addConsumable(name, quantity = 1) {
+    const existing = this.inventory.find(i => i.name === name);
+    if (existing) existing.quantity += quantity;
+    else this.inventory.push({ name, quantity });
+  },
 };

@@ -81,3 +81,73 @@ test('weighted drop pool never returns an item outside the pool', () => {
   }
   assert.equal(GameState.rollForDropFromPool(pool, 0), null);
 });
+
+test('spendGold only pays when the party can afford it', () => {
+  const { GameState } = loadGame();
+  GameState.gold = 100;
+  assert.equal(GameState.spendGold(150), false);
+  assert.equal(GameState.gold, 100);
+  assert.equal(GameState.spendGold(100), true);
+  assert.equal(GameState.gold, 0);
+  assert.equal(GameState.spendGold(-5), false);
+  assert.equal(GameState.spendGold(NaN), false);
+});
+
+test('inn restores living members to full HP/MP and does not revive', () => {
+  const { GameState } = loadGame();
+  const [a, b] = GameState.party;
+  a.hp = 3; a.mp = 0;
+  b.hp = 0; b.mp = 0;
+  const rested = GameState.restParty();
+  assert.equal(rested.length, 1);
+  assert.equal(a.hp, a.maxHp); assert.equal(a.mp, a.maxMp);
+  assert.equal(b.hp, 0, 'a downed member stays down');
+  assert.equal(GameState.membersNeedingRest().length, 0);
+});
+
+test('hospital revives a downed member to 1 HP and only that member', () => {
+  const { GameState } = loadGame();
+  const [a, b] = GameState.party;
+  a.hp = 0; b.hp = 5;
+  assert.equal(GameState.downedMembers().length, 1);
+  assert.equal(GameState.reviveMember(b), false);
+  assert.equal(b.hp, 5);
+  assert.equal(GameState.reviveMember(a), true);
+  assert.equal(a.hp, 1);
+  assert.equal(GameState.downedMembers().length, 0);
+});
+
+test('shop: addConsumable stacks onto an existing item or creates it', () => {
+  const { GameState } = loadGame();
+  const before = GameState.inventory.find(i => i.name === 'Potion').quantity;
+  GameState.addConsumable('Potion', 2);
+  assert.equal(GameState.inventory.find(i => i.name === 'Potion').quantity, before + 2);
+  GameState.inventory = GameState.inventory.filter(i => i.name !== 'Potion');
+  GameState.addConsumable('Potion');
+  assert.equal(GameState.inventory.find(i => i.name === 'Potion').quantity, 1);
+});
+
+test('buyItem: consumables stack, equipment keeps slot and bonus, bad or unaffordable buys take nothing', () => {
+  const { GameState } = loadGame();
+  GameState.gold = 120;
+  const potions = () => GameState.inventory.find(i => i.name === 'Potion').quantity;
+  const before = potions();
+  assert.equal(GameState.buyItem('Potion', 50), 'ok');
+  assert.equal(potions(), before + 1);
+  assert.equal(GameState.gold, 70);
+
+  assert.equal(GameState.buyItem('Potion', 500), 'broke');
+  assert.equal(GameState.gold, 70);
+  assert.equal(potions(), before + 1);
+
+  assert.equal(GameState.buyItem('Excalibur', 1), 'unknown');
+  assert.equal(GameState.gold, 70);
+
+  const n = GameState.inventory.length;
+  assert.equal(GameState.buyItem('Mace', 60), 'ok');
+  const mace = GameState.inventory[GameState.inventory.length - 1];
+  assert.equal(GameState.inventory.length, n + 1);
+  assert.equal(mace.slot, 'primary');
+  assert.ok(Array.isArray(mace.bonus) && mace.bonus.length > 0);
+  assert.equal(GameState.gold, 10);
+});

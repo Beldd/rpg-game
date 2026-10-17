@@ -91,6 +91,31 @@ function validateContent(content, opts = {}) {
     if (!(c.baseStats?.attackMin <= c.baseStats?.attackMax)) err(`Character "${c.id}": attackMin is above attackMax`);
   });
 
+  dupes(content.npcs, 'id', 'NPCs');
+  const EFFECTS = opts.effects || ['restore_party', 'resurrect', 'reset_dungeon'];
+  const MAX_ENTRIES = opts.maxEntries || 3;
+  (content.npcs || []).forEach(n => {
+    const tag = `NPC "${n.id}"`;
+    const entries = (n.services || []).length + ((n.sells || []).length ? 1 : 0);
+    if (entries > MAX_ENTRIES) err(`${tag}: offers ${entries} things; the most the dialogue fits is ${MAX_ENTRIES} (services plus one shop)`);
+    if (entries === 0) warn(`${tag} offers nothing (no services and nothing for sale)`);
+    (n.services || []).forEach(s => {
+      if (!EFFECTS.includes(s.effect)) err(`${tag}: unknown service effect "${s.effect}"`);
+      if (!(s.cost >= 0)) err(`${tag}: service "${s.effect}" needs a cost of 0 or more`);
+    });
+    const seenItems = new Set();
+    (n.sells || []).forEach(s => {
+      if (!itemNames.has(s.item)) err(`${tag}: sells "${s.item}", which is not a known item`);
+      if (!(s.price >= 0)) err(`${tag}: "${s.item}" needs a price of 0 or more`);
+      if (seenItems.has(s.item)) warn(`${tag}: "${s.item}" is listed twice`);
+      seenItems.add(s.item);
+    });
+    if (n.sprite && opts.sheets) {
+      const sh = opts.sheets[n.sprite.sheet];
+      if (!sh || !(n.sprite.frame >= 0 && n.sprite.frame < sh.cols * sh.rows)) err(`${tag}: sprite is not a valid frame`);
+    }
+  });
+
   // Tiled object layer vs content
   const zoneIds = new Set((content.zones || []).map(z => z.id));
   for (const [key, m] of Object.entries(maps)) {
@@ -101,6 +126,16 @@ function validateContent(content, opts = {}) {
       const tx = Math.floor(o.x / 16), ty = Math.floor(o.y / 16);
       if (tx < 0 || ty < 0 || tx >= m.width || ty >= m.height) err(`${key}.json object "${o.name}" is outside the map`);
       if (o.type === 'zone' && !zoneIds.has(prop('zone'))) err(`${key}.json zone object "${o.name}" refers to unknown zone "${prop('zone')}"`);
+    });
+    const npcIds = new Set((content.npcs || []).map(n => n.id));
+    const tiles = (m.layers.find(l => l.type === 'tilelayer') || {}).data;
+    layer.objects.filter(o => o.type === 'npc').forEach(o => {
+      const id = (o.properties || []).find(p => p.name === 'npc')?.value;
+      const tag = `${key}.json NPC object "${o.name}"`;
+      if (!npcIds.has(id)) err(`${tag}: refers to unknown NPC id "${id}"`);
+      const tx = Math.floor(o.x / 16), ty = Math.floor(o.y / 16);
+      const t = tiles && tiles[ty * m.width + tx];
+      if (t === 0 || t === 27) err(`${tag} is standing inside a wall at (${tx},${ty})`);
     });
     const roomNames = new Set(layer.objects.filter(o => o.type === 'room').map(o => o.name));
     layer.objects.filter(o => o.type === 'door' && (o.properties || []).some(p => p.name === 'target' && p.value === 'room')).forEach(o => {
@@ -123,7 +158,7 @@ if (require.main === module) {
   const { EditorData } = loadEditorData();
   const raw = readJson(file);
   const content = EditorData.migrate(JSON.parse(JSON.stringify(raw.data || raw)));
-  const { errors, warnings } = validateContent(content, { sheets: EditorData.SPRITE_SHEETS });
+  const { errors, warnings } = validateContent(content, { sheets: EditorData.SPRITE_SHEETS, effects: Object.keys(EditorData.NPC_EFFECTS), maxEntries: EditorData.NPC_MAX_ENTRIES });
   warnings.forEach(w => console.log('WARN  ' + w));
   errors.forEach(e => console.log('ERROR ' + e));
   console.log(`${path.relative(process.cwd(), file) || file}: ${errors.length} error(s), ${warnings.length} warning(s)`);

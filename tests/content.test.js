@@ -8,7 +8,7 @@ const { validateContent } = require('../tools/validate-content');
 const { EditorData } = loadEditorData();
 const clone = o => JSON.parse(JSON.stringify(o));
 const repo = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'game-content.json'), 'utf8'));
-const check = c => validateContent(EditorData.migrate(clone(c)), { sheets: EditorData.SPRITE_SHEETS });
+const check = c => validateContent(EditorData.migrate(clone(c)), { sheets: EditorData.SPRITE_SHEETS, effects: Object.keys(EditorData.NPC_EFFECTS), maxEntries: EditorData.NPC_MAX_ENTRIES });
 
 test('built-in defaults pass the content rules', () => {
   const { errors } = check(EditorData.defaults);
@@ -29,7 +29,7 @@ test('validator catches broken content', () => {
   bad.encounters[0].mapPosition = { tileX: 500, tileY: 2 };
   const migrated = EditorData.migrate(bad);
   migrated.encounters[0].sprite = { sheet: 'tiny_dungeon', frame: 9999 }; // migrate() would null this, so set it afterwards
-  const msgs = validateContent(migrated, { sheets: EditorData.SPRITE_SHEETS }).errors.join('\n');
+  const msgs = validateContent(migrated, { sheets: EditorData.SPRITE_SHEETS, effects: Object.keys(EditorData.NPC_EFFECTS), maxEntries: EditorData.NPC_MAX_ENTRIES }).errors.join('\n');
   for (const needle of ['ghost_99', 'Nonexistent Item', 'attackMin is above', 'out of range', 'outside the map'])
     assert.ok(msgs.includes(needle), `expected an error mentioning "${needle}"\n${msgs}`);
 });
@@ -98,4 +98,54 @@ test('content source priority: local override > repo file > defaults', () => {
 test('corrupt local override falls back instead of throwing', () => {
   const g = loadEditorData({ storage: { 'rpg-editor-data': '{not json' } });
   assert.doesNotThrow(() => g.EditorData.load());
+});
+
+test('migrate() seeds the default NPCs when the list is missing', () => {
+  const m = EditorData.migrate({ encounters: clone(repo.data.encounters) });
+  assert.equal(m.npcs.map(n => n.id).sort().join(','), 'doctor,innkeeper,potion_master,wizard');
+});
+
+test('migrate() keeps NPC edits and does not bring a deleted NPC back', () => {
+  const c = clone(repo.data);
+  c.npcs = clone(EditorData.defaults.npcs).filter(n => n.id !== 'doctor');
+  c.npcs.find(n => n.id === 'innkeeper').services[0].cost = 75;
+  const m = EditorData.migrate(c);
+  assert.equal(m.npcs.some(n => n.id === 'doctor'), false);
+  assert.equal(m.npcs.find(n => n.id === 'innkeeper').services[0].cost, 75);
+});
+
+test('migrate() repairs malformed NPC entries', () => {
+  const c = clone(repo.data);
+  c.npcs = [
+    { id: 'x', services: [{ effect: 'nonsense', cost: 5 }, { effect: 'resurrect', cost: -4 }, { effect: 'resurrect', cost: 9 }],
+      sells: [{ item: 'Potion', price: 'free', perVisit: 0 }, { price: 3 }], sprite: { sheet: 'nope', frame: 1 } },
+    null,
+    { name: 'no id' },
+  ];
+  const m = EditorData.migrate(c);
+  assert.equal(m.npcs.length, 1);
+  const n = m.npcs[0];
+  assert.equal(n.name, 'x');
+  assert.equal(n.sprite, null);
+  assert.equal(JSON.stringify(n.services), '[{"effect":"resurrect","cost":0}]');
+  assert.equal(JSON.stringify(n.sells), '[{"item":"Potion","price":0,"perVisit":null}]');
+});
+
+test('validator catches bad NPC content', () => {
+  const c = clone(repo.data);
+  c.npcs = clone(EditorData.defaults.npcs);
+  const inn = c.npcs.find(n => n.id === 'innkeeper');
+  inn.services.push({ effect: 'resurrect', cost: 10 }, { effect: 'reset_dungeon', cost: 0 });
+  inn.sells = [{ item: 'Potion', price: 5, perVisit: null }];                // 3 services + a shop = 4 entries
+  c.npcs.find(n => n.id === 'potion_master').sells.push({ item: 'Unobtainium', price: 9, perVisit: null });
+  const migrated = EditorData.migrate(c);
+  migrated.npcs.find(n => n.id === 'doctor').services[0].effect = 'teleport';  // set after migrate, which would drop it
+  const msgs = validateContent(migrated, { sheets: EditorData.SPRITE_SHEETS, effects: Object.keys(EditorData.NPC_EFFECTS), maxEntries: EditorData.NPC_MAX_ENTRIES }).errors.join('\n');
+  for (const needle of ['offers 4 things', 'Unobtainium', 'teleport'])
+    assert.ok(msgs.includes(needle), `expected an error mentioning "${needle}"\n${msgs}`);
+});
+
+test('default NPCs sell and offer only things that exist', () => {
+  const { errors } = check({ ...clone(repo.data), npcs: clone(EditorData.defaults.npcs) });
+  assert.equal(errors.join('\n'), '');
 });

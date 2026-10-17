@@ -212,18 +212,23 @@ class MapScene extends Phaser.Scene {
     // once if update() fires again before the scene actually switches.
     this.encounterTriggered = false;
 
-    // --- Dungeon reset NPC (wizard) ---
-    // Tile (35, 21): one tile east of the dungeon door exit, same row as
-    // where the player lands after leaving the dungeon. Frame 84 = column 0,
-    // row 7 on the 12×11 tilemap_packed spritesheet (purple-robed wizard).
-    // NPC_TILE is the wizard's own tile — interaction fires when the player
-    // is on any of the 8 surrounding tiles and presses Enter.
-    this.NPC_TILE = this._mapObjects.npc || { x: 35, y: 21 };
-    this.npcSprite = this.add.image(
-      this.NPC_TILE.x * this.TILE_SIZE + this.TILE_SIZE / 2,
-      this.NPC_TILE.y * this.TILE_SIZE + this.TILE_SIZE / 2,
-      'characters', 84
-    );
+    // --- NPCs ---
+    // NPC positions come from the map's object layer; who they are and what
+    // they offer comes from the editor content. Interaction fires when the player is on any of the 8 surrounding tiles and
+    // presses Enter. NPC tiles also block movement.
+    this.npcs = this._mapObjects.npcs.map(place => {
+      const content = EditorData.getNpc(place.id);
+      if (!content) {
+        console.warn(`Map has an NPC "${place.id}" that is not in the content; skipping it.`);
+        return null;
+      }
+      const def = { ...content, x: place.x, y: place.y };
+      const px = def.x * this.TILE_SIZE + this.TILE_SIZE / 2;
+      const py = def.y * this.TILE_SIZE + this.TILE_SIZE / 2;
+      const sprite = EditorData.makeSpriteImage(this, px, py, def.sprite)
+        || this.add.image(px, py, 'characters', 84);
+      return { def, sprite };
+    }).filter(Boolean);
 
     // --- Dialogue box UI ---
     // Built once here, hidden by default, and shown/repositioned by
@@ -243,6 +248,12 @@ class MapScene extends Phaser.Scene {
       .setDepth(100)        // above room covers (depth 1) so dialogue is never hidden
       .setVisible(false);
 
+    // Shop panel background (rows are DOM text, added while shopping).
+    this._shop = null;
+    this._shopEls = [];
+    this.shopBg = this.add.rectangle(width / 2, height / 2, 260, 150, 0x000000, 0.92)
+      .setOrigin(0.5).setScrollFactor(0).setDepth(100).setVisible(false);
+
     // Building interiors: cover each room until the player steps in.
     this._setupRooms();
     this._updateRooms(this.playerTileX, this.playerTileY);
@@ -253,6 +264,15 @@ class MapScene extends Phaser.Scene {
       align: 'center',
     });
     this.dialogueTextEl.style.display = 'none';
+
+    // Speaker name, top centre of the box (set while talking to an NPC).
+    this._speaker = null;
+    this.dialogueTitleEl = domText.create(width / 2, dialogueBoxY - 37, '', {
+      fontSize: 10,
+      color: '#ffdd66',
+      align: 'center',
+    });
+    this.dialogueTitleEl.style.display = 'none';
     // Allow the dialogue text to wrap onto multiple lines rather than
     // overflowing off the sides of the box — our other text elements
     // are all short single-line labels, but dialogue lines are
@@ -375,7 +395,9 @@ class MapScene extends Phaser.Scene {
    *   rooms  – rectangles (type "room"): interiors hidden until entered.
    *            A door (property target="room", room=<name>) marks the
    *            doorway tiles that reveal that room.
-   *   npc    – point (type "npc") -> tile
+   *   npcs   – points (type "npc") with property npc=<id>: where that NPC
+   *            stands. Who they are (name, sprite, services, shop stock)
+   *            comes from the editor content, see EditorData.getNpc().
    * Falls back to the original hard-coded values if the layer is missing,
    * so an older map.json still plays the same.
    */
@@ -385,11 +407,12 @@ class MapScene extends Phaser.Scene {
       zones: [{ zone: 'town', x1: 0, y1: 0, x2: 44, y2: 23 }],
       doors: [{ target: 'dungeon', tiles: [{ x: 31, y: 20 }, { x: 32, y: 20 }, { x: 33, y: 20 }] }],
       rooms: [],
-      npc: null,
+      // Fallback wizard (used only if map.json has no object layer).
+      npcs: [{ id: 'wizard', x: 35, y: 21 }],
     };
     const layer = map.getObjectLayer && map.getObjectLayer('objects');
     if (layer && layer.objects) {
-      const zones = [], doors = [];
+      const zones = [], doors = [], npcs = [];
       const prop = (o, n) => { const p = (o.properties || []).find(q => q.name === n); return p ? p.value : undefined; };
       for (const o of layer.objects) {
         if (o.type === 'zone' && o.width) {
@@ -405,10 +428,11 @@ class MapScene extends Phaser.Scene {
           out.rooms.push({ name: o.name,
             x1: Math.floor(o.x / T), y1: Math.floor(o.y / T),
             x2: Math.ceil((o.x + o.width) / T) - 1, y2: Math.ceil((o.y + o.height) / T) - 1 });
-        } else if (o.type === 'npc') {
-          out.npc = { x: Math.floor(o.x / T), y: Math.floor(o.y / T) };
+        } else if (o.type === 'npc' && prop(o, 'npc')) {
+          npcs.push({ id: prop(o, 'npc'), x: Math.floor(o.x / T), y: Math.floor(o.y / T) });
         }
       }
+      if (npcs.length) out.npcs = npcs;
       if (zones.length) out.zones = zones;
       if (doors.length) out.doors = doors;
     }
@@ -551,6 +575,9 @@ class MapScene extends Phaser.Scene {
     if (this.isTileBlocked(targetTileX, targetTileY)) {
       return; // blocked — don't move, don't even start an animation
     }
+    if (this.npcs.some(n => n.def.x === targetTileX && n.def.y === targetTileY)) {
+      return; // NPCs are solid
+    }
 
     this.isMoving = true;
     this.playerTileX = targetTileX;
@@ -582,8 +609,19 @@ class MapScene extends Phaser.Scene {
    * choices — the player presses Enter to dismiss it and movement
    * resumes. Used for the NPC's dialogue.
    */
+  /** Shows the current speaker's name in the box, or hides the title if none. */
+  _refreshSpeaker() {
+    if (this._speaker) {
+      domText.setText(this.dialogueTitleEl, this._speaker);
+      this.dialogueTitleEl.style.display = 'block';
+    } else {
+      this.dialogueTitleEl.style.display = 'none';
+    }
+  }
+
   showMessageDialogue(text) {
     this.dialogueState = 'MESSAGE';
+    this._refreshSpeaker();
     this.dialogueBoxBg.setVisible(true);
     this.dialogueTextEl.style.display = 'block';
     domText.setText(this.dialogueTextEl, text);
@@ -608,11 +646,25 @@ class MapScene extends Phaser.Scene {
       this.clearOverlayContent();
     }
 
+    this._refreshSpeaker();
     this.dialogueBoxBg.setVisible(true);
     this.dialogueTextEl.style.display = 'block';
     domText.setText(this.dialogueTextEl, text);
 
     this.renderDialogueChoices();
+  }
+
+  /**
+   * Horizontal layout of the choice row: each option gets 70px, shrunk when
+   * there are many so the whole row, including the cursor to the left of the
+   * first option, stays inside the dialogue box (which is width - 60 wide).
+   */
+  _choiceLayout() {
+    const { width } = this.cameras.main;
+    const boxW = width - 60;
+    const slotWidth = Math.min(70, Math.floor((boxW - 24) / this.dialogueOptions.length));
+    const startX = width / 2 - (this.dialogueOptions.length * slotWidth) / 2 + 16;
+    return { slotWidth, startX };
   }
 
   /**
@@ -622,9 +674,8 @@ class MapScene extends Phaser.Scene {
    * needs to run a single time per dialogue rather than per navigation.
    */
   renderDialogueChoices() {
-    const { width, height } = this.cameras.main;
-    const slotWidth = 70;
-    const startX = width / 2 - (this.dialogueOptions.length * slotWidth) / 2 + 16;
+    const { height } = this.cameras.main;
+    const { slotWidth, startX } = this._choiceLayout();
     const y = height / 2 + 28; // below the message text, still inside the centered box
 
     this.dialogueChoiceTexts = this.dialogueOptions.map((opt, i) =>
@@ -645,9 +696,7 @@ class MapScene extends Phaser.Scene {
 
   /** Moves the choice cursor to sit just left of the selected option's slot. */
   updateDialogueCursorPosition() {
-    const { width } = this.cameras.main;
-    const slotWidth = 70;
-    const startX = width / 2 - (this.dialogueOptions.length * slotWidth) / 2 + 16;
+    const { slotWidth, startX } = this._choiceLayout();
     const x = startX - 16 + this.dialogueSelectedIndex * slotWidth;
     this.dialogueCursorEl.style.left = `${x * domText.ZOOM}px`;
   }
@@ -657,10 +706,12 @@ class MapScene extends Phaser.Scene {
    * control to normal map movement. Called after a message is
    * dismissed, or after a choice's action has been triggered.
    */
-  closeDialogue() {
+  closeDialogue(keepSpeaker = false) {
     this.dialogueState = null;
+    if (!keepSpeaker) this._speaker = null; // NPC conversations pass true while they continue
     this.dialogueBoxBg.setVisible(false);
     this.dialogueTextEl.style.display = 'none';
+    this.dialogueTitleEl.style.display = 'none';
 
     this.dialogueChoiceTexts.forEach((el) => domText.remove(el));
     this.dialogueChoiceTexts = [];
@@ -1417,37 +1468,201 @@ class MapScene extends Phaser.Scene {
    * wizard NPC. Called each frame when Enter is pressed and no dialogue
    * is open, so the player doesn't need to be facing a specific direction.
    */
-  _isAdjacentToNpc() {
-    const dx = Math.abs(this.playerTileX - this.NPC_TILE.x);
-    const dy = Math.abs(this.playerTileY - this.NPC_TILE.y);
-    return dx <= 1 && dy <= 1 && (dx + dy > 0); // within 1 tile in any direction, not on the NPC itself
+  _adjacentNpc() {
+    const found = this.npcs.find(n => {
+      const dx = Math.abs(this.playerTileX - n.def.x);
+      const dy = Math.abs(this.playerTileY - n.def.y);
+      return dx <= 1 && dy <= 1 && (dx + dy > 0); // within 1 tile in any direction, not on the NPC itself
+    });
+    return found ? found.def : null;
   }
 
   /**
-   * Opens the dungeon-reset dialogue. First step is a Yes/No choice;
-   * each branch resolves to a single dismissable message.
+   * Starts a conversation. An NPC that offers one thing (a service, or a
+   * shop) goes straight to it; one that offers several shows a short menu.
    */
-  openNpcDialogue() {
-    this.openChoiceDialogue('Reset the dungeon?', [
-      {
-        label: 'Yes',
-        action: () => {
-          GameState.resetDungeon();
-          this.closeDialogue();
-          this.showMessageDialogue('The dungeon has been reset.');
-        },
-      },
-      {
-        label: 'No',
-        action: () => {
-          this.closeDialogue();
-          this.showMessageDialogue('Talk to me again if you change your mind.');
-        },
-      },
+  openNpcFor(def) {
+    this._speaker = def.name;
+    const entries = def.services.map(svc => ({
+      label: EditorData.NPC_EFFECTS[svc.effect].short,
+      run: () => this._runService(def, svc),
+    }));
+    if (def.sells.length) entries.push({ label: 'Buy', run: () => this.openShop(def) });
+
+    if (entries.length === 0) { this.showMessageDialogue('Hello, traveler.'); return; }
+    if (entries.length === 1) { entries[0].run(); return; }
+    this.openChoiceDialogue('How can I help?', [
+      ...entries.map(e => ({ label: e.label, action: () => { this.closeDialogue(true); e.run(); } })),
+      { label: 'Leave', action: () => this._say('Safe travels.') },
     ]);
   }
 
+  /** Closes the current dialogue and shows a one-line message. */
+  _say(text) {
+    this.closeDialogue(true);
+    this.showMessageDialogue(text);
+  }
+
+  _runService(def, svc) {
+    if (svc.effect === 'restore_party') return this.openRestDialogue(svc.cost);
+    if (svc.effect === 'resurrect') return this.openReviveDialogue(svc.cost);
+    if (svc.effect === 'reset_dungeon') return this.openResetDialogue(svc.cost);
+  }
+
+  /** "800 gold" or "free", for prompts. */
+  _price(cost) { return cost > 0 ? `${cost} gold` : 'free'; }
+
+  /** Restore HP/MP: every living party member to full, for a flat price. */
+  openRestDialogue(cost) {
+    if (GameState.membersNeedingRest().length === 0) {
+      this.showMessageDialogue('Everyone looks well rested. No charge.');
+      return;
+    }
+    if (GameState.gold < cost) {
+      this.showMessageDialogue(`That costs ${cost} gold. You have ${GameState.gold}.`);
+      return;
+    }
+    this.openChoiceDialogue(`Rest for ${this._price(cost)}? (You have ${GameState.gold})`, [
+      { label: 'Yes', action: () => {
+          GameState.spendGold(cost);
+          GameState.restParty();
+          const down = GameState.downedMembers().length;
+          this._say(down ? 'Rested! Fallen allies need the hospital.' : 'You feel fully rested.');
+      } },
+      { label: 'No', action: () => this._say('Come back any time.') },
+    ]);
+  }
+
+  /** Resurrect: brings a member at 0 HP back to 1 HP for a flat price. */
+  openReviveDialogue(cost) {
+    const downed = GameState.downedMembers();
+    if (downed.length === 0) {
+      this.showMessageDialogue('No one here needs treatment.');
+      return;
+    }
+    if (GameState.gold < cost) {
+      this.showMessageDialogue(`Treatment costs ${cost} gold. You have ${GameState.gold}.`);
+      return;
+    }
+    // Only three names fit on the choice row next to Leave; the rest can be
+    // treated on the next visit.
+    const options = downed.slice(0, 3).map(m => ({
+      label: m.name,
+      action: () => {
+        GameState.spendGold(cost);
+        GameState.reviveMember(m);
+        this._say(`${m.name} is back on their feet with 1 HP.`);
+      },
+    }));
+    options.push({ label: 'Leave', action: () => this._say('Take care out there.') });
+    this.openChoiceDialogue(`Treat who? ${this._price(cost)}. (You have ${GameState.gold})`, options);
+  }
+
+  /** Reset Dungeon: makes every defeated dungeon enemy reappear. */
+  openResetDialogue(cost) {
+    if (GameState.gold < cost) {
+      this.showMessageDialogue(`That costs ${cost} gold. You have ${GameState.gold}.`);
+      return;
+    }
+    this.openChoiceDialogue(`Reset the dungeon? (${this._price(cost)})`, [
+      { label: 'Yes', action: () => {
+          GameState.spendGold(cost);
+          GameState.resetDungeon();
+          this._say('The dungeon has been reset.');
+      } },
+      { label: 'No', action: () => this._say('Talk to me again if you change your mind.') },
+    ]);
+  }
+
+  // ─── Shop panel ───────────────────────────────────────────────────────────
+  // A vertical list (one row per item for sale) shown while dialogueState is
+  // 'SHOP'. Up/Down choose, Enter buys one, Esc leaves. An item's per-visit
+  // cap resets every time you start talking to the vendor.
+
+  openShop(def) {
+    this._speaker = def.name;
+    this._shop = { def, idx: 0, top: 0, note: '', bought: {} };
+    this.dialogueState = 'SHOP';
+    this._renderShop();
+  }
+
+  _shopLeft(row) {
+    if (row.perVisit == null) return Infinity;
+    return Math.max(0, row.perVisit - (this._shop.bought[row.item] || 0));
+  }
+
+  _ownedCount(name) {
+    return GameState.inventory.filter(i => i.name === name).reduce((n, i) => n + (i.quantity || 1), 0);
+  }
+
+  _clearShopEls() {
+    (this._shopEls || []).forEach(el => domText.remove(el));
+    this._shopEls = [];
+  }
+
+  _renderShop() {
+    const sh = this._shop;
+    const rows = sh.def.sells;
+    const VISIBLE = 6;
+    if (sh.idx < sh.top) sh.top = sh.idx;
+    if (sh.idx >= sh.top + VISIBLE) sh.top = sh.idx - VISIBLE + 1;
+
+    this._clearShopEls();
+    this.shopBg.setVisible(true);
+    const add = (x, y, text, opt) => { const el = domText.create(x, y, text, { align: 'left', fontSize: 11, ...opt }); this._shopEls.push(el); return el; };
+
+    add(160 - 4 * sh.def.name.length, 54, sh.def.name, { fontSize: 10, color: '#ffdd66' });
+    rows.slice(sh.top, sh.top + VISIBLE).forEach((row, k) => {
+      const i = sh.top + k;
+      const y = 72 + k * 14;
+      const soldOut = this._shopLeft(row) === 0;
+      const color = soldOut ? '#777777' : '#ffffff';
+      if (i === sh.idx) add(42, y, '>', { color: '#ffff00' });
+      add(54, y, row.item, { color });
+      add(150, y, soldOut ? 'SOLD' : `${row.price}g`, { color });
+      const left = this._shopLeft(row);
+      add(198, y, `Own ${this._ownedCount(row.item)}${left === Infinity ? '' : `, ${left} left`}`, { color: soldOut ? '#777777' : '#aaccff', fontSize: 10 });
+    });
+    if (rows.length > VISIBLE) add(262, 54, `${sh.idx + 1}/${rows.length}`, { fontSize: 9, color: '#888888' });
+    add(42, 160, `Gold: ${GameState.gold}`, { color: '#ffdd66' });
+    if (sh.note) add(110, 160, sh.note, { fontSize: 10 });
+    add(42, 180, 'Enter: buy one    Esc: leave', { fontSize: 9, color: '#888888' });
+  }
+
+  _closeShop() {
+    this._clearShopEls();
+    this.shopBg.setVisible(false);
+    this._shop = null;
+    this.dialogueState = null;
+    this._speaker = null;
+  }
+
+  _updateShop() {
+    const sh = this._shop;
+    const rows = sh.def.sells;
+    if (Phaser.Input.Keyboard.JustDown(this.escKey)) { this._closeShop(); return; }
+    if (Phaser.Input.Keyboard.JustDown(this.cursors.up)) {
+      sh.idx = (sh.idx - 1 + rows.length) % rows.length; sh.note = ''; this._renderShop();
+    } else if (Phaser.Input.Keyboard.JustDown(this.cursors.down)) {
+      sh.idx = (sh.idx + 1) % rows.length; sh.note = ''; this._renderShop();
+    } else if (Phaser.Input.Keyboard.JustDown(this.enterKey)) {
+      const row = rows[sh.idx];
+      if (this._shopLeft(row) === 0) {
+        sh.note = 'Sold out for now.';
+      } else {
+        const result = GameState.buyItem(row.item, row.price);
+        if (result === 'ok') { sh.bought[row.item] = (sh.bought[row.item] || 0) + 1; sh.note = `Bought ${row.item}.`; }
+        else if (result === 'broke') sh.note = 'Not enough gold.';
+        else sh.note = 'Not for sale.';
+      }
+      this._renderShop();
+    }
+  }
+
   update() {
+    // The shop panel owns the keyboard while it is open (P/I are ignored).
+    if (this.dialogueState === 'SHOP') { this._updateShop(); return; }
+
     // P / I open the overlay — check FIRST, before the isActive guard,
     // so the keypress isn't lost on the frame the overlay is launching.
     // Mirror DungeonScene's pattern exactly: check P/I, launch if not
@@ -1680,8 +1895,9 @@ class MapScene extends Phaser.Scene {
 
     // Enter while adjacent to the wizard NPC opens the dungeon-reset dialogue.
     if (Phaser.Input.Keyboard.JustDown(this.enterKey) && !this.isMoving && !this.encounterTriggered) {
-      if (this._isAdjacentToNpc()) {
-        this.openNpcDialogue();
+      const npc = this._adjacentNpc();
+      if (npc) {
+        this.openNpcFor(npc);
         return;
       }
     }

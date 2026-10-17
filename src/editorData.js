@@ -84,7 +84,32 @@ const EditorData = {
     return scene.add.image(x, y, sheet.textureKey, sprite.frame);
   },
 
+  /**
+   * What an NPC service can do. `label` is for the editor, `short` is the
+   * one-word choice shown in the game when an NPC offers several things.
+   * The game implements each effect in MapScene; adding a new one means
+   * adding it here and there.
+   */
+  NPC_EFFECTS: {
+    restore_party: { label: 'Restore HP/MP', short: 'Rest' },
+    resurrect:     { label: 'Resurrect',     short: 'Revive' },
+    reset_dungeon: { label: 'Reset Dungeon', short: 'Reset' },
+  },
+
+  /** Most things (services plus one shop) an NPC may offer; the choice row fits four options plus Leave. */
+  NPC_MAX_ENTRIES: 3,
+
   defaults: {
+    npcs: [
+      { id: 'wizard', name: 'Wizard', sprite: { sheet: 'tiny_dungeon', frame: 84 },
+        services: [{ effect: 'reset_dungeon', cost: 0 }], sells: [] },
+      { id: 'innkeeper', name: 'Inn Keeper', sprite: { sheet: 'tiny_dungeon', frame: 85 },
+        services: [{ effect: 'restore_party', cost: 100 }], sells: [] },
+      { id: 'potion_master', name: 'Potion Master', sprite: { sheet: 'tiny_dungeon', frame: 86 },
+        services: [], sells: [{ item: 'Potion', price: 50, perVisit: null }] },
+      { id: 'doctor', name: 'Doctor', sprite: { sheet: 'tiny_dungeon', frame: 99 },
+        services: [{ effect: 'resurrect', cost: 200 }], sells: [] },
+    ],
     encounters: [
       {
         id: 'slime_01',
@@ -321,6 +346,7 @@ const EditorData = {
     this._migrateEquipment(data);
     this._migrateCharacters(data);
     this._migrateZones(data);
+    this._migrateNpcs(data);
     return data;
   },
 
@@ -387,6 +413,36 @@ const EditorData = {
       if (!existingIds.has(defaultItem.id)) {
         data.equipment.push(JSON.parse(JSON.stringify(defaultItem)));
       }
+    });
+  },
+
+  /**
+   * NPCs are seeded from the defaults only when the list does not exist yet
+   * (content from before NPCs were editable). After that the designer owns
+   * the list, so deleting an NPC sticks. Malformed entries are repaired, not
+   * rejected, in the same spirit as the other migrations.
+   */
+  _migrateNpcs(data) {
+    if (!Array.isArray(data.npcs)) {
+      data.npcs = JSON.parse(JSON.stringify(this.defaults.npcs));
+      return;
+    }
+    const money = v => (Number.isFinite(v) && v >= 0 ? Math.round(v) : 0);
+    data.npcs = data.npcs.filter(n => n && typeof n.id === 'string' && n.id);
+    data.npcs.forEach(n => {
+      if (typeof n.name !== 'string' || !n.name) n.name = n.id;
+      if (!this.isValidSprite(n.sprite)) n.sprite = null;
+      const seen = new Set();
+      n.services = (Array.isArray(n.services) ? n.services : [])
+        .filter(s => s && this.NPC_EFFECTS[s.effect] && !seen.has(s.effect) && seen.add(s.effect))
+        .map(s => ({ effect: s.effect, cost: money(s.cost) }));
+      n.sells = (Array.isArray(n.sells) ? n.sells : [])
+        .filter(s => s && typeof s.item === 'string' && s.item)
+        .map(s => ({
+          item: s.item,
+          price: money(s.price),
+          perVisit: Number.isInteger(s.perVisit) && s.perVisit >= 1 ? s.perVisit : null,
+        }));
     });
   },
 
@@ -523,6 +579,14 @@ const EditorData = {
   getCharacter(id) {
     const data = this.load();
     return (data.characters || []).find(c => c.id === id) || null;
+  },
+
+  getNpcs() {
+    return this.load().npcs || JSON.parse(JSON.stringify(this.defaults.npcs));
+  },
+
+  getNpc(id) {
+    return this.getNpcs().find(n => n.id === id) || null;
   },
 
   getZone(id) {

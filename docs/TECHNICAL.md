@@ -52,6 +52,16 @@ Sprites are referenced as `{ sheet, frame }` against a registry of tile sheets i
 
 A `room` object marks an interior. A `door` object with property `target=room` and `room=<room name>` marks the doorway tile(s). `MapScene._setupRooms` puts a black cover (depth 1) over each room; `_updateRooms` hides the cover while the player's destination tile is inside the room or on its doorway, and shows it again as soon as the player steps out. It runs at the start of each move so the room is revealed before the player slides in. The dialogue box is at depth 100 so covers never hide it. To make another building a room, draw a `room` rectangle over its interior tiles and a `door` over the gap in its wall. Anything inside, such as enemies and NPCs, is hidden with it.
 
+## NPCs and town services
+
+Who an NPC is lives in the content (`npcs`, the sixth content list); where they stand lives in the map. An `npc` point in the map's `objects` layer has one property, `npc=<id>`, and `MapScene` joins it to `EditorData.getNpc(id)`. A map NPC whose id is not in the content is skipped with a console warning.
+
+An NPC has a `name` (shown as the speaker), a `sprite`, a list of `services` (`{ effect, cost }`, one per effect) and a list of `sells` (`{ item, price, perVisit }`; `perVisit` is a per-conversation purchase cap, blank means unlimited). Effects are defined in `EditorData.NPC_EFFECTS`: `restore_party` (living members to full HP and MP), `resurrect` (one member from 0 to 1 HP) and `reset_dungeon`. Adding an effect means adding it there and handling it in `MapScene._runService`.
+
+An NPC that offers one thing goes straight to it; one that offers several (services plus a shop counts as one) shows a short menu. At most three things per NPC (`NPC_MAX_ENTRIES`) so the choice row fits. A shop opens a vertical panel (`dialogueState` `SHOP`): Up/Down choose, Enter buys one, Esc leaves. Items can be consumables or equipment; equipment is added with its slot and bonus so it can be equipped. Stock is unlimited; `perVisit` caps reset each time you start talking to the vendor, and nothing about stock is saved.
+
+The state changes (`spendGold`, `restParty`, `reviveMember`, `buyItem`) live in `GameState` and are unit tested. NPC content is seeded from the defaults only when the list is missing, so deleting an NPC in the editor sticks. The hospital-style revive menu shows up to three downed members per visit.
+
 ## Tests
 
 Needs Node 18+ and no installs.

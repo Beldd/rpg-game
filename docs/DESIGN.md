@@ -16,7 +16,7 @@ Without a written definition, scope has no edge. The definition is three parts, 
 
 **Difficulty targets** (relative to a regular monster): rare 35–50% harder, elite 75–100%, boss 125%. These are guidelines for hand-tuned stats for now; an automatic stat helper was considered and deferred until real play shows whether the numbers feel right.
 
-**Towns.** Enterable buildings (inn, shop, hospital) whose interiors stay hidden until the player opens the door and steps in. Services are free for now, and gold exists as a reward but nothing costs it yet, so economy balance does not block building the functionality.
+**Towns.** Enterable buildings (inn, shop, hospital) whose interiors stay hidden until the player opens the door and steps in. Each building has one NPC and one flat-price service, so gold now has a use: the inn (100 gold) restores HP and MP of living party members, the shop sells Potions (50 gold each), and the hospital brings a party member at 0 HP back to 1 HP (200 gold). Prices are first-pass numbers to be tuned in play.
 
 **Out of scope for this version:** training centers and recruiting, end-game content (damage tests, very hard bosses, leaderboards), battles with several monsters at once, and a full story campaign. A single story chapter may come once everything else is complete.
 
@@ -34,6 +34,8 @@ Without a written definition, scope has no edge. The definition is three parts, 
 | One sprite field per enemy | Separate battle and map art; one shared sprite | One sprite used for battle, town and dungeon. Simpler to author; can be split later if needed. | Built |
 | Static encounter placement | Always on every map; per-encounter choice | An "appears on" setting per encounter. Simple now, and will become a list of real map ids when more maps exist. | Built |
 | Town interiors | Always visible; hidden until entered | Hidden until the player opens the door, as in Final Fantasy 1. A room is revealed while the player is inside and hidden again when they leave. First pass is a cover over the interior on the same map; separate interior maps were not needed yet. | Built (one test room) |
+| Town services | Free for now; paid from the start | Paid from the start, flat prices, one service per building. Gold had no sink, so the economy could not be judged until it did. The inn does not revive downed members, otherwise the hospital would have no purpose. | Built, prices untuned |
+| Where prices live | Editor; map data | On the NPC object in the map for now (fastest). Moving prices and shop stock into the editor is planned, alongside per-item prices. | Deferred |
 | Training centers | In this version; later | Later. Not needed to prove the 2D game. | Deferred |
 | Image upload for monster art | In this version; later | Later. A sprite picker over a licensed tile sheet covers the proof of concept, and uploads would bloat the shared content file. | Deferred |
 
@@ -65,7 +67,7 @@ Without a written definition, scope has no edge. The definition is three parts, 
 | Content export, import and repo file | Done |
 | Encounter fields: gold, tier, sprite, map placement | Done |
 | Zones, doors and NPC as map data | Done |
-| Hidden building interiors (one test room) | Done, being played |
+| Hidden building interiors, inn, shop and hospital | Done, being played |
 | Part 1: zones | Planned |
 | Part 2: procedural dungeons | Planned |
 | Part 3: character progression | Planned |
