@@ -52,11 +52,27 @@ class DungeonScene extends Phaser.Scene {
     this._encounterBagIdx = 0;
   }
 
+  /**
+   * Which dungeon this is comes from the scene data: the door the player
+   * walked through (fresh entry) or the battle they are returning from.
+   * The dungeon id is also its map file (assets/<id>.json), its zone id for
+   * random encounters and its map id for static encounters (appearsIn).
+   */
+  init(data) {
+    const d = data || {};
+    const r = d.returnData || {};
+    this.dungeonId = d.dungeon || r.dungeonId || 'dungeon';
+    this.overworldReturn = {
+      x: d.returnX ?? r.overworldX ?? 32,
+      y: d.returnY ?? r.overworldY ?? 21,
+    };
+  }
+
   preload() {
     // Reuse the same tileset image — Phaser caches it after MapScene
     // loads it, so this is effectively free on subsequent visits.
     this.load.image('tiles', 'assets/kenny/tiny_dungeon/Tilemap/tilemap_packed.png');
-    this.load.tilemapTiledJSON('dungeon', 'assets/dungeon.json');
+    this.load.tilemapTiledJSON(this.dungeonId, `assets/${this.dungeonId}.json`);
     this.load.image('player', 'assets/player.png');
     this.load.image('enemy', 'assets/enemy.png');
     EditorData.preloadSheets(this); // encounter sprites (skipped if MapScene already loaded them)
@@ -82,7 +98,8 @@ class DungeonScene extends Phaser.Scene {
     domText.fadeIn();
     this.cameras.main.setBackgroundColor('#000000');
 
-    const map = this.make.tilemap({ key: 'dungeon' });
+    const map = this.make.tilemap({ key: this.dungeonId });
+    this._loadDungeonObjects(map);
     const tileset = map.addTilesetImage('kenney_tiny_dungeon', 'tiles');
     this.groundLayer = map.createLayer('ground', tileset, 0, 0);
     this.map = map;
@@ -117,8 +134,8 @@ class DungeonScene extends Phaser.Scene {
     // started rather than resetting them to the entrance every time.
     // Exception: static encounter LOSS — return to entrance so the player
     // can re-equip/heal before trying again; sprite persists (no defeat record).
-    const defaultSpawnX = 14;
-    const defaultSpawnY = 3;
+    const defaultSpawnX = this.spawnTile.x;
+    const defaultSpawnY = this.spawnTile.y;
     let spawnX = defaultSpawnX;
     let spawnY = defaultSpawnY;
     if (returnData && returnData.spawnTileX !== undefined) {
@@ -148,7 +165,7 @@ class DungeonScene extends Phaser.Scene {
     // Build static encounter list. Encounters already in GameState.dungeonDefeatedIds
     // are spawned with their sprite hidden (defeated this run) so the player can't
     // re-trigger them until the dungeon is reset.
-    this.staticEncounters = EditorData.getStaticEncountersFor('dungeon').map(enc => {
+    this.staticEncounters = EditorData.getStaticEncountersFor(this.dungeonId).map(enc => {
       const pos = enc.dungeonPosition || enc.mapPosition;
       const defeated = GameState.dungeonDefeatedIds.has(enc.id);
       const px = pos.tileX * this.TILE_SIZE + this.TILE_SIZE / 2;
@@ -246,7 +263,7 @@ class DungeonScene extends Phaser.Scene {
    * so no coordinate-based zone lookup is needed here.
    */
   _checkRandomEncounter() {
-    const encounterIds = EditorData.getRandomEncounterIds('dungeon');
+    const encounterIds = EditorData.getRandomEncounterIds(this.dungeonId);
     if (!encounterIds.length) return false;
     if (!this._drawEncounterToken()) return false;
 
@@ -286,6 +303,9 @@ class DungeonScene extends Phaser.Scene {
           spawnTileX: spawnX,
           spawnTileY: spawnY,
           isStaticEncounter: false,
+          dungeonId: this.dungeonId,
+          overworldX: this.overworldReturn.x,
+          overworldY: this.overworldReturn.y,
         },
       });
     });
@@ -301,7 +321,7 @@ class DungeonScene extends Phaser.Scene {
     const targetTileY = this.playerTileY + dy;
 
     // Check exit trigger first
-    const isExit = this.EXIT_TILES.some(t => t.x === targetTileX && t.y === targetTileY);
+    const isExit = this.exitTiles.some(t => t.x === targetTileX && t.y === targetTileY);
     if (isExit) {
       this.returnToTown();
       return;
@@ -340,6 +360,30 @@ class DungeonScene extends Phaser.Scene {
     });
   }
 
+  /**
+   * Reads this dungeon's exit and spawn from an optional "objects" layer in
+   * its map file: a rectangle of type "exit" (the doorway tiles) and a point
+   * of type "spawn" (where the player appears on entry). A map without the
+   * layer, like the original dungeon.json, uses the old fixed values.
+   */
+  _loadDungeonObjects(map) {
+    const T = this.TILE_SIZE;
+    this.exitTiles = this.EXIT_TILES;
+    this.spawnTile = { x: 14, y: 3 };
+    const layer = map.getObjectLayer && map.getObjectLayer('objects');
+    if (!layer || !layer.objects) return;
+    const exits = [];
+    for (const o of layer.objects) {
+      if (o.type === 'exit' && o.width) {
+        for (let ty = Math.floor(o.y / T); ty < Math.ceil((o.y + o.height) / T); ty++)
+          for (let tx = Math.floor(o.x / T); tx < Math.ceil((o.x + o.width) / T); tx++) exits.push({ x: tx, y: ty });
+      } else if (o.type === 'spawn') {
+        this.spawnTile = { x: Math.floor(o.x / T), y: Math.floor(o.y / T) };
+      }
+    }
+    if (exits.length) this.exitTiles = exits;
+  }
+
   // ─── Scene transitions ───────────────────────────────────────────────────
 
   /**
@@ -354,7 +398,7 @@ class DungeonScene extends Phaser.Scene {
     domText.fadeOut();
     this.cameras.main.once('camerafadeoutcomplete', () => {
       domText.clearAll();
-      this.scene.start('MapScene', { returnX: 32, returnY: 21 });
+      this.scene.start('MapScene', { returnX: this.overworldReturn.x, returnY: this.overworldReturn.y });
     });
   }
 
@@ -401,7 +445,7 @@ class DungeonScene extends Phaser.Scene {
     this.cameras.main.fadeOut(400, 0, 0, 0);
     domText.fadeOut();
     this.cameras.main.once('camerafadeoutcomplete', () => {
-      const spawn = this._pendingSpawnTile || { x: 14, y: 3 };
+      const spawn = this._pendingSpawnTile || this.spawnTile;
       this.scene.start('BattleScene', {
         encounterId: this.activeEncounterId,
         returnScene: 'DungeonScene',
@@ -410,6 +454,9 @@ class DungeonScene extends Phaser.Scene {
           spawnTileY: spawn.y,
           encounterId: this.activeEncounterId,
           isStaticEncounter: true,
+          dungeonId: this.dungeonId,
+          overworldX: this.overworldReturn.x,
+          overworldY: this.overworldReturn.y,
         },
       });
     });

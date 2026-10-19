@@ -8,6 +8,6 @@
  * console at boot, and stamped into save files.
  */
 const BUILD_INFO = {
-  version: '0.2.0',
+  version: '0.3.1',
   label: 'content-pipeline', // free-text note about what this build is
 };

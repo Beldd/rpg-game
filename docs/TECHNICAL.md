@@ -28,7 +28,7 @@ Script order matters: `buildInfo.js` and `editorData.js` load before `gameState.
 
 ## Content pipeline
 
-Content is five lists of plain objects (encounters, consumables, equipment, characters, zones). The game picks the first available source:
+Content is six lists of plain objects (encounters, consumables, equipment, characters, zones, npcs). The game picks the first available source:
 
 1. The editor's local edits (localStorage key `rpg-editor-data`), on that browser only.
 2. `game-content.json`, fetched once before the game starts.
@@ -71,6 +71,14 @@ Needs Node 18+ and no installs.
 - Browser scripts are loaded into a Node `vm` sandbox (`tests/loadEditorData.js`), so the game code is tested unmodified.
 - Not covered yet: scenes, menus and rendering. These are checked by playing.
 
+## Credits
+
+`src/credits.js` holds the Credits screen as data (a list of pages, each with a title and lines). `CreditsScene` shows them one page at a time; the title menu opens it. Add a line there for anything that needs attribution.
+
+## Dungeons
+
+A dungeon is a small map of its own, `assets/<id>.json`. The id doubles as the zone id for random encounters and as the map id in an encounter's `appearsIn` for static ones. A `door` object in `map.json` with `target=dungeon` and `dungeon=<id>` (default `dungeon`) leads in; the player reappears one tile south of that door's middle tile. Inside, an optional `objects` layer in the dungeon's own map holds an `exit` rectangle (the doorway tiles) and a `spawn` point; a map without it, like the original `dungeon.json`, uses the old fixed values. `DungeonScene.init` reads the id from the scene data (fresh entry) or from the battle's `returnData` (coming back from a fight), so the scene needs no other state to know which dungeon it is. The defeated-enemy set is shared and keyed by encounter id, and "Reset Dungeon" clears all of it.
+
 ## Known gaps
 
-Zone borders, the dungeon door and the NPC position now come from the `objects` layer of `assets/map.json` (Tiled rectangles/points typed `zone`, `door`, `npc`, `room`; `MapScene._loadMapObjects` reads them and falls back to the old values if the layer is missing). The dungeon map and the level curve are not data-driven yet. Scene and UI behavior has no automated tests; some files are leftovers (`src/domText2.js`, `assets/tileset.png`, `BootScene`).
+Zone borders, the dungeon door and the NPC position now come from the `objects` layer of `assets/map.json` (Tiled rectangles/points typed `zone`, `door`, `npc`, `room`; `MapScene._loadMapObjects` reads them and falls back to the old values if the layer is missing). The level curve is not data-driven yet. Scene and UI behavior has no automated tests; some files are leftovers (`src/domText2.js`, `assets/tileset.png`, `BootScene`).

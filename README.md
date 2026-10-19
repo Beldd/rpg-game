@@ -54,12 +54,12 @@ An internet connection is needed for the Phaser CDN.
 
 ## Roadmap
 
-1. Hidden building interiors in towns: working in one test building, to be rolled out to the rest (zone borders, doors, rooms and NPC positions are map data).
+1. Hidden building interiors in towns: working in the inn, shop and hospital (zone borders, doors, rooms and NPC positions are map data; NPC names, sprites, services and shop stock are edited in the editor's NPCs tab).
 2. Zones: an overworld, towns and dungeons with distinct encounter rules.
 3. Procedurally generated dungeons (target 10–15 minutes each, with rare, elite and boss guards).
 4. Character progression: levels, abilities, items.
 
-Details, rationale and out-of-scope items are in [docs/DESIGN.md](docs/DESIGN.md). Technical notes are in [docs/TECHNICAL.md](docs/TECHNICAL.md).
+Details, rationale and out-of-scope items are in [docs/DESIGN.md](docs/DESIGN.md). Technical notes are in [docs/TECHNICAL.md](docs/TECHNICAL.md). Map drawing in Tiled is covered in [docs/TILED_GUIDE.md](docs/TILED_GUIDE.md).
 
 ## How it was built
 
@@ -70,5 +70,9 @@ Designed, directed and tested by me. Implementation was done with AI assistance 
 ## Credits and licenses
 
 - Game engine: [Phaser 3](https://phaser.io) (MIT).
-- Tiles and sprites: "Tiny Dungeon" by [Kenney](https://kenney.nl) (check the license that ships with the pack and keep it in `assets/kenny/`).
+- Tiles and sprites: "Tiny Dungeon", "Tiny Town" and "Tiny Farm" by [Kenney](https://kenney.nl), released under CC0. Each pack's license file is kept next to it in `assets/kenny/`.
+- Map editor: [Tiled](https://www.mapeditor.org).
+- Design, product management, art and quality assurance: Charles "Beldd" Rapkin.
+- Development: Claude, an AI assistant by Anthropic, working from my specifications and playtesting. See "How it was built" above.
+- The in-game Credits screen (title menu) reads from `src/credits.js`. Add anything that requires attribution there as soon as it is used.
 - Everything else in this repository is my own work. <!-- Add a LICENSE file when you decide how the code may be used. -->

@@ -35,7 +35,10 @@ Without a written definition, scope has no edge. The definition is three parts, 
 | Static encounter placement | Always on every map; per-encounter choice | An "appears on" setting per encounter. Simple now, and will become a list of real map ids when more maps exist. | Built |
 | Town interiors | Always visible; hidden until entered | Hidden until the player opens the door, as in Final Fantasy 1. A room is revealed while the player is inside and hidden again when they leave. First pass is a cover over the interior on the same map; separate interior maps were not needed yet. | Built (one test room) |
 | Town services | Free for now; paid from the start | Paid from the start, flat prices, one service per building. Gold had no sink, so the economy could not be judged until it did. The inn does not revive downed members, otherwise the hospital would have no purpose. | Built, prices untuned |
-| Where prices live | Editor; map data | On the NPC object in the map for now (fastest). Moving prices and shop stock into the editor is planned, alongside per-item prices. | Deferred |
+| Where prices live | Editor; map data | In the editor, on each NPC: service costs, shop prices and an optional per-visit cap. The map only says where an NPC stands. | Done. Stock is unlimited by default; the cap resets every time you start talking to the NPC and is not saved. |
+| Overworld structure | One big map with towns as regions; a Final Fantasy-style world map | A world map where towns and dungeons are single entrances that lead to their own maps, as in Final Fantasy 1, 4 and 6. Chosen because it is the intended feel of the game. The dungeon-as-its-own-map work already done carries over; the 64×48 overworld will shrink and towns become separate maps. | Decided 2026-10-18; supersedes the earlier plan for towns as regions |
+| Tile art sources | Kenney Tiny Dungeon only; mix several sets | Mix: Tiny Dungeon, Tiny Town and Tiny Farm (all CC0), plus a world-map set still to be chosen. Needs several tilesets and tile layers per map, and a per-tileset rule for which tiles block walking. | Planned |
+| Credits | README only; in-game screen | An in-game Credits screen from the title menu, driven by `src/credits.js`, plus the README. Needed to meet attribution terms of any CC-BY art added later. | Done |
 | Training centers | In this version; later | Later. Not needed to prove the 2D game. | Deferred |
 | Image upload for monster art | In this version; later | Later. A sprite picker over a licensed tile sheet covers the proof of concept, and uploads would bloat the shared content file. | Deferred |
 
@@ -55,7 +58,7 @@ Without a written definition, scope has no edge. The definition is three parts, 
 |---|---|
 | Users | A designer changing game content (enemies, drops, zones, gear, characters) without a developer. |
 | Jobs | Add or tune content; see the result quickly; share it; recover from mistakes. |
-| What exists | Forms for five content types, an enemy sprite picker, export, import, reset to repo content, reset to defaults, a raw data view. |
+| What exists | Forms for six content types (encounters, consumables, equipment, characters, zones, NPCs), an enemy sprite picker, export, import, reset to repo content, reset to defaults, a raw data view. |
 | Safeguards | Import checks the file looks like game content and asks before replacing; old content is upgraded automatically on load; missing or broken content falls back to defaults instead of breaking the game. |
 | Known gaps | No warning when a random enemy is not assigned to any zone; items are matched by name rather than id; equipment bonuses cannot raise speed. |
 

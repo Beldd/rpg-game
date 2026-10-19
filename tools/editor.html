@@ -330,6 +330,10 @@
       🗺️ Zones
       <span class="nav-count" id="nav-count-zones">0</span>
     </div>
+    <div class="nav-item" onclick="selectSection('npcs')" id="nav-npcs">
+      🧙 NPCs
+      <span class="nav-count" id="nav-count-npcs">0</span>
+    </div>
     <div class="nav-item disabled" style="opacity:0.4;cursor:not-allowed;" title="Coming soon">
       ✨ Abilities <span class="nav-count">—</span>
     </div>
@@ -426,6 +430,7 @@ function selectSection(section) {
     equipment: '🗡️ Equipment',
     characters: '👤 Characters',
     zones: '🗺️ Zones',
+    npcs: '🧙 NPCs',
   };
   const titleEl = document.getElementById('list-panel-title');
   if (titleEl) titleEl.textContent = titles[section] || section;
@@ -454,6 +459,9 @@ function renderList() {
       sub = `${item.slot} · ${item.startingOwned ? 'starting item' : 'not starting'}`;
     } else if (activeSection === 'characters') {
       sub = `${(item.spells || []).length} spell${(item.spells || []).length === 1 ? '' : 's'} · HP ${item.startingHp} MP ${item.startingMp}`;
+    } else if (activeSection === 'npcs') {
+      const sv = (item.services || []).length, sl = (item.sells || []).length;
+      sub = `${sv} service${sv === 1 ? '' : 's'} · ${sl} item${sl === 1 ? '' : 's'} for sale`;
     } else if (activeSection === 'zones') {
       const enc = item.randomEncounters || [];
       sub = `${item.enabled ? '✅ enabled' : '⛔ disabled'} · ${enc.length} encounter${enc.length === 1 ? '' : 's'}`;
@@ -496,6 +504,8 @@ function renderForm() {
     renderEquipmentForm(item, selectedIndex);
   } else if (activeSection === 'characters') {
     renderCharacterForm(item, selectedIndex);
+  } else if (activeSection === 'npcs') {
+    renderNpcForm(item, selectedIndex);
   }
 }
 
@@ -815,7 +825,9 @@ const SPRITE_PICKER_ZOOM = 3;
 
 let spritePickerSheetId = null; // which sheet the picker is browsing (remembered across encounters)
 
-function spritePickerHtml(enc, index) {
+function spritePickerHtml(enc, index, opts = {}) {
+  const usedIn = opts.usedIn || 'battle and on the map';
+  const noSprite = opts.noSprite || 'battle and map use the generic placeholder.';
   const sheetIds = Object.keys(EditorData.SPRITE_SHEETS);
   // Browse the sheet the encounter already uses; otherwise the last one browsed.
   const sheetId = EditorData.isValidSprite(enc.sprite) ? enc.sprite.sheet
@@ -833,7 +845,7 @@ function spritePickerHtml(enc, index) {
   const cur = (EditorData.isValidSprite(enc.sprite) && enc.sprite.sheet === sheetId) ? enc.sprite.frame : null;
 
   let selBox = '';
-  let preview = '<span class="field-hint">No sprite chosen: battle and map use the generic placeholder.</span>';
+  let preview = `<span class="field-hint">No sprite chosen: ${noSprite}</span>`;
   if (cur !== null) {
     const col = cur % sheet.cols, row = Math.floor(cur / sheet.cols);
     selBox = `<div style="position:absolute;left:${col * sheet.frameWidth * z}px;top:${row * sheet.frameHeight * z}px;
@@ -847,7 +859,7 @@ function spritePickerHtml(enc, index) {
 
   return `
     ${sheetSelect}
-    <div class="field-hint" style="margin-bottom:8px;">${escHtml(sheet.label)}: click a tile. Used in battle and on the map.</div>
+    <div class="field-hint" style="margin-bottom:8px;">${escHtml(sheet.label)}: click a tile. Used ${usedIn}.</div>
     <div style="display:flex;gap:16px;align-items:flex-start;flex-wrap:wrap;">
       <div style="position:relative;width:${w}px;height:${h}px;background:#0a0a1a url('${url}') 0 0 / ${w}px ${h}px no-repeat;
         image-rendering:pixelated;cursor:pointer;border:1px solid #2a2a4a;"
@@ -1325,6 +1337,14 @@ function createNew() {
       baseStats: { attackMin: 3, attackMax: 6, defense: 0 },
       spells: [],
     };
+  } else if (activeSection === 'npcs') {
+    newItem = {
+      id: `npc_${Date.now()}`,
+      name: 'New NPC',
+      sprite: null,
+      services: [],
+      sells: [],
+    };
   } else if (activeSection === 'zones') {
     newItem = {
       id: `zone_${Date.now()}`,
@@ -1500,6 +1520,8 @@ function updateNavCounts() {
   const zo = editorData.zones || [];
   const zoEl = document.getElementById('nav-count-zones');
   if (zoEl) zoEl.textContent = zo.length;
+  const npEl = document.getElementById('nav-count-npcs');
+  if (npEl) npEl.textContent = (editorData.npcs || []).length;
 }
 
 function renderConsumableForm(con, index) {
@@ -1647,6 +1669,190 @@ function toggleZoneEncounter(index, encId, checked) {
   markDirty();
   // Re-render the list panel subtitle to reflect the new count.
   renderList();
+}
+
+// ── NPCs ───────────────────────────────────────────────────────────
+// Who an NPC is (name, sprite, services, shop stock) is edited here. Where
+// they stand is an NPC object in assets/map.json (Tiled) whose `npc`
+// property is this NPC's id. The form checks the map file and says which.
+
+let mapNpcPlacements = null; // id -> [{x, y}], or null if the map could not be read
+fetch('../assets/map.json').then(r => r.json()).then(map => {
+  const out = {};
+  (map.layers || []).filter(l => l.type === 'objectgroup').forEach(l => {
+    (l.objects || []).filter(o => o.type === 'npc').forEach(o => {
+      const id = (o.properties || []).find(p => p.name === 'npc')?.value;
+      if (id) (out[id] = out[id] || []).push({ x: Math.floor(o.x / 16), y: Math.floor(o.y / 16) });
+    });
+  });
+  mapNpcPlacements = out;
+  if (activeSection === 'npcs' && selectedIndex !== null) renderForm();
+}).catch(() => { mapNpcPlacements = null; });
+
+function npcEntryCount(npc) {
+  return (npc.services || []).length + ((npc.sells || []).length ? 1 : 0);
+}
+
+function renderNpcForm(npc, index) {
+  npc.services = npc.services || [];
+  npc.sells = npc.sells || [];
+  const effects = EditorData.NPC_EFFECTS;
+  const MAX = EditorData.NPC_MAX_ENTRIES;
+  const used = new Set(npc.services.map(s => s.effect));
+  const unused = Object.keys(effects).filter(k => !used.has(k));
+  const entries = npcEntryCount(npc);
+
+  const itemOptions = (current) => {
+    const cons = (editorData.consumables || []).map(c => c.name);
+    const eq = (editorData.equipment || []).map(e => e.name);
+    const known = new Set([...cons, ...eq]);
+    const opt = n => `<option value="${escHtml(n)}" ${n === current ? 'selected' : ''}>${escHtml(n)}</option>`;
+    return (known.has(current) ? '' : `<option value="${escHtml(current)}" selected>(missing) ${escHtml(current)}</option>`) +
+      `<optgroup label="Consumables">${cons.map(opt).join('')}</optgroup>` +
+      `<optgroup label="Equipment">${eq.map(opt).join('')}</optgroup>`;
+  };
+
+  const servicesHtml = npc.services.map((svc, i) => `
+    <div class="drop-pool-entry">
+      <div class="form-field" style="flex:2;">
+        <label>Effect</label>
+        <select onchange="updateNpcService(${index}, ${i}, 'effect', this.value)">
+          ${[svc.effect, ...unused].map(k => `<option value="${k}" ${k === svc.effect ? 'selected' : ''}>${escHtml(effects[k] ? effects[k].label : k + ' (unknown)')}</option>`).join('')}
+        </select>
+      </div>
+      <div class="form-field field-weight" style="flex:0 0 100px;">
+        <label>Cost (gold)</label>
+        <input type="number" min="0" value="${svc.cost}"
+          onchange="updateNpcService(${index}, ${i}, 'cost', Math.max(0, Math.round(+this.value || 0)))" />
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="removeNpcService(${index}, ${i})">✕</button>
+    </div>`).join('');
+
+  const sellsHtml = npc.sells.map((row, i) => `
+    <div class="drop-pool-entry">
+      <div class="form-field" style="flex:2;">
+        <label>Item</label>
+        <select onchange="updateNpcSell(${index}, ${i}, 'item', this.value)">${itemOptions(row.item)}</select>
+      </div>
+      <div class="form-field field-weight" style="flex:0 0 90px;">
+        <label>Price</label>
+        <input type="number" min="0" value="${row.price}"
+          onchange="updateNpcSell(${index}, ${i}, 'price', Math.max(0, Math.round(+this.value || 0)))" />
+      </div>
+      <div class="form-field field-weight" style="flex:0 0 110px;">
+        <label>Per visit</label>
+        <input type="number" min="1" placeholder="unlimited" value="${row.perVisit == null ? '' : row.perVisit}"
+          onchange="updateNpcSell(${index}, ${i}, 'perVisit', this.value === '' ? null : Math.max(1, Math.floor(+this.value || 1)))" />
+      </div>
+      <button class="btn btn-danger btn-sm" onclick="removeNpcSell(${index}, ${i})">✕</button>
+    </div>`).join('');
+
+  const placed = mapNpcPlacements === null
+    ? 'Could not read assets/map.json to check where this NPC stands.'
+    : (mapNpcPlacements[npc.id]
+        ? `Stands on the map at ${mapNpcPlacements[npc.id].map(p => `(${p.x}, ${p.y})`).join(' and ')}.`
+        : `Not placed on the map yet. In Tiled, add an NPC object to assets/map.json with the property npc = ${npc.id}.`);
+  const placedColor = mapNpcPlacements && mapNpcPlacements[npc.id] ? '#6fcf97' : '#e0a060';
+
+  document.getElementById('form-content').innerHTML = `
+    <h3>Edit NPC</h3>
+
+    <div class="form-section">
+      <div class="form-section-title">Identity</div>
+      <div class="form-row">
+        <div class="form-field">
+          <label>ID</label>
+          <input type="text" value="${escHtml(npc.id)}" onchange="updateField(${index}, 'id', this.value)" />
+          <span class="field-hint">The map's NPC objects point at this ID, so changing it unlinks the NPC from its spot on the map.</span>
+        </div>
+        <div class="form-field">
+          <label>Name</label>
+          <input type="text" value="${escHtml(npc.name)}" onchange="updateField(${index}, 'name', this.value); renderList();" />
+          <span class="field-hint">Shown at the top of the dialogue box.</span>
+        </div>
+      </div>
+      <div class="field-hint" style="color:${placedColor};margin-top:6px;">${escHtml(placed)}</div>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Sprite</div>
+      ${spritePickerHtml(npc, index, { usedIn: 'on the map', noSprite: 'the map uses a placeholder figure.' })}
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">Services</div>
+      <div class="field-hint" style="margin-bottom:10px;">What this NPC does for gold. One of each effect. Cost 0 makes it free.</div>
+      <div id="drop-pool-list">${servicesHtml || '<div class="field-hint">No services.</div>'}</div>
+      <button class="btn btn-secondary btn-sm" onclick="addNpcService(${index})"
+        ${unused.length === 0 || entries >= MAX ? 'disabled style="opacity:0.4;cursor:not-allowed;"' : ''}>+ Add service</button>
+    </div>
+
+    <div class="form-section">
+      <div class="form-section-title">For sale</div>
+      <div class="field-hint" style="margin-bottom:10px;">Items this NPC sells, one at a time. "Per visit" caps how many you can buy each time you start talking to them; blank means unlimited. Stock is not saved.</div>
+      <div id="drop-pool-list">${sellsHtml || '<div class="field-hint">Nothing for sale.</div>'}</div>
+      <button class="btn btn-secondary btn-sm" onclick="addNpcSell(${index})">+ Add item</button>
+    </div>
+
+    <div class="field-hint" style="color:${entries > MAX ? '#ff7777' : '#8899aa'};">
+      Dialogue slots used: ${entries} of ${MAX} (each service is one, and the whole shop is one).
+      ${entries > MAX ? 'Too many: the game cannot show them all. Remove a service.' : ''}
+      ${entries === 0 ? 'This NPC offers nothing and will just say hello.' : ''}
+    </div>
+
+    <hr class="section-sep">
+    <div style="display:flex;gap:10px;">
+      <button class="btn btn-primary" onclick="saveAll()">Save changes</button>
+      <button class="btn btn-danger" onclick="deleteItem(${index})">Delete NPC</button>
+    </div>
+  `;
+}
+
+function updateNpcService(index, si, field, value) {
+  editorData.npcs[index].services[si][field] = value;
+  markDirty();
+  if (field === 'effect') renderForm();
+}
+
+function addNpcService(index) {
+  const npc = editorData.npcs[index];
+  const used = new Set(npc.services.map(s => s.effect));
+  const next = Object.keys(EditorData.NPC_EFFECTS).find(k => !used.has(k));
+  if (!next || npcEntryCount(npc) >= EditorData.NPC_MAX_ENTRIES) return;
+  npc.services.push({ effect: next, cost: 0 });
+  markDirty();
+  renderList();
+  renderForm();
+}
+
+function removeNpcService(index, si) {
+  editorData.npcs[index].services.splice(si, 1);
+  markDirty();
+  renderList();
+  renderForm();
+}
+
+function updateNpcSell(index, si, field, value) {
+  editorData.npcs[index].sells[si][field] = value;
+  markDirty();
+}
+
+function addNpcSell(index) {
+  const all = [...(editorData.consumables || []), ...(editorData.equipment || [])];
+  const taken = new Set(editorData.npcs[index].sells.map(r => r.item));
+  const first = all.find(i => !taken.has(i.name));
+  if (!first) { setStatus('Every item is already for sale here (or none exist yet).', 'error'); return; }
+  editorData.npcs[index].sells.push({ item: first.name, price: 10, perVisit: null });
+  markDirty();
+  renderList();
+  renderForm();
+}
+
+function removeNpcSell(index, si) {
+  editorData.npcs[index].sells.splice(si, 1);
+  markDirty();
+  renderList();
+  renderForm();
 }
 
 function escHtml(str) {

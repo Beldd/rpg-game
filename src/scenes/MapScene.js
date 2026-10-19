@@ -405,7 +405,7 @@ class MapScene extends Phaser.Scene {
     const T = this.TILE_SIZE || 16;
     const out = {
       zones: [{ zone: 'town', x1: 0, y1: 0, x2: 44, y2: 23 }],
-      doors: [{ target: 'dungeon', tiles: [{ x: 31, y: 20 }, { x: 32, y: 20 }, { x: 33, y: 20 }] }],
+      doors: [{ target: 'dungeon', dungeon: 'dungeon', tiles: [{ x: 31, y: 20 }, { x: 32, y: 20 }, { x: 33, y: 20 }] }],
       rooms: [],
       // Fallback wizard (used only if map.json has no object layer).
       npcs: [{ id: 'wizard', x: 35, y: 21 }],
@@ -423,7 +423,7 @@ class MapScene extends Phaser.Scene {
           const tiles = [];
           for (let ty = Math.floor(o.y / T); ty < Math.ceil((o.y + o.height) / T); ty++)
             for (let tx = Math.floor(o.x / T); tx < Math.ceil((o.x + o.width) / T); tx++) tiles.push({ x: tx, y: ty });
-          doors.push({ target: prop(o, 'target') || o.name, room: prop(o, 'room'), tiles });
+          doors.push({ target: prop(o, 'target') || o.name, room: prop(o, 'room'), dungeon: prop(o, 'dungeon') || 'dungeon', tiles });
         } else if (o.type === 'room' && o.width) {
           out.rooms.push({ name: o.name,
             x1: Math.floor(o.x / T), y1: Math.floor(o.y / T),
@@ -553,9 +553,10 @@ class MapScene extends Phaser.Scene {
 
     // Check dungeon entrance trigger — stepping onto the door tiles
     // at the south face of the dungeon building transitions to DungeonScene.
-    const dungeonDoor = this._mapObjects.doors.find(d => d.target === 'dungeon');
-    if (dungeonDoor && dungeonDoor.tiles.some(t => t.x === targetTileX && t.y === targetTileY)) {
-      this.enterDungeon();
+    const dungeonDoor = this._mapObjects.doors.find(d => d.target === 'dungeon' &&
+      d.tiles.some(t => t.x === targetTileX && t.y === targetTileY));
+    if (dungeonDoor) {
+      this.enterDungeon(dungeonDoor);
       return;
     }
 
@@ -1371,7 +1372,12 @@ class MapScene extends Phaser.Scene {
    * Fades out and launches DungeonScene. The player will reappear
    * at the dungeon entrance vestibule on the dungeon map.
    */
-  enterDungeon() {
+  enterDungeon(door) {
+    // Which dungeon, and where to reappear outside it: one tile south of the
+    // door's middle tile. Both come from the door object in map.json.
+    const mid = door.tiles[Math.floor(door.tiles.length / 2)];
+    const dungeonId = door.dungeon || 'dungeon';
+    const returnX = mid.x, returnY = mid.y + 1;
     this.encounterTriggered = true; // reuse this flag to block further input
     this.cameras.main.fadeOut(400, 0, 0, 0);
     domText.fadeOut();
@@ -1383,7 +1389,7 @@ class MapScene extends Phaser.Scene {
       // persists in settings and causes DungeonScene to re-apply it on
       // every subsequent entry — hiding defeated enemies even after a
       // reset, and spawning the player at the old encounter tile.
-      this.scene.start('DungeonScene', { fromMap: true });
+      this.scene.start('DungeonScene', { fromMap: true, dungeon: dungeonId, returnX, returnY });
     });
   }
 

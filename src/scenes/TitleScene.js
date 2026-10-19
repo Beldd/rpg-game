@@ -39,6 +39,11 @@ class TitleScene extends Phaser.Scene {
         disabled: false,
         action: () => this.handleNewGame(),
       },
+      {
+        label: 'Credits',
+        disabled: false,
+        action: () => this.handleCredits(),
+      },
     ];
     this.selectedIndex = hasSave ? 0 : 1; // default to whichever option is actually usable
 
@@ -105,6 +110,16 @@ class TitleScene extends Phaser.Scene {
   handleNewGame() {
     GameState.resetToNewGame();
     this.proceedToMap();
+  }
+
+  /** Opens the credits screen (src/credits.js). Escape there returns here. */
+  handleCredits() {
+    this.cameras.main.fadeOut(300, 0, 0, 0);
+    domText.fadeOut();
+    this.cameras.main.once('camerafadeoutcomplete', () => {
+      domText.clearAll();
+      this.scene.start('CreditsScene');
+    });
   }
 
   proceedToMap() {
