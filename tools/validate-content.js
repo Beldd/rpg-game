@@ -5,13 +5,27 @@
 // Errors = the game would misbehave. Warnings = probably a mistake.
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 const readJson = p => JSON.parse(fs.readFileSync(p, 'utf8'));
 
+// The tile-sheet registry lives in the browser script src/tilesets.js.
+const Tilesets = vm.runInNewContext(fs.readFileSync(path.join(ROOT, 'src', 'tilesets.js'), 'utf8') + '\n;Tilesets', {});
+
 function mapInfo(file) {
   const m = readJson(path.join(ROOT, 'assets', file));
-  return { width: m.width, height: m.height, layers: m.layers };
+  return { width: m.width, height: m.height, layers: m.layers, tilesets: m.tilesets || [] };
+}
+
+/** Global tile ids that block walking in this map (same rule as the game). */
+function blockedGidsFor(m) {
+  const out = new Set();
+  for (const ts of m.tilesets) {
+    const r = !ts.source && Tilesets.resolve(ts);
+    if (r) r.def.blocked.forEach(local => out.add(ts.firstgid + local));
+  }
+  return out;
 }
 
 /**
@@ -116,6 +130,18 @@ function validateContent(content, opts = {}) {
     }
   });
 
+  // Tilesets: Phaser cannot read external ones, and unregistered ones draw nothing.
+  for (const [key, m] of Object.entries(maps)) {
+    m.tilesets.forEach(ts => {
+      if (ts.source) err(`${key}.json: tileset "${ts.source}" is external. In Tiled, select it in the Tilesets panel, click Embed Tileset, and save again`);
+      else if (!Tilesets.resolve(ts)) warn(`${key}.json: tileset "${ts.name}" is not registered in src/tilesets.js, so its tiles will not be drawn`);
+      else {
+        const r = Tilesets.resolve(ts);
+        if (!fs.existsSync(path.join(ROOT, r.def.image))) err(`${key}.json: tile sheet ${r.def.image} is missing from the repo`);
+      }
+    });
+  }
+
   // Tiled object layer vs content
   const zoneIds = new Set((content.zones || []).map(z => z.id));
   for (const [key, m] of Object.entries(maps)) {
@@ -128,16 +154,24 @@ function validateContent(content, opts = {}) {
       if (o.type === 'zone' && !zoneIds.has(prop('zone'))) err(`${key}.json zone object "${o.name}" refers to unknown zone "${prop('zone')}"`);
     });
     const npcIds = new Set((content.npcs || []).map(n => n.id));
-    const tiles = (m.layers.find(l => l.type === 'tilelayer') || {}).data;
+    const tileLayers = m.layers.filter(l => l.type === 'tilelayer' && !Tilesets.isRoofName(l.name));
+    const blockedGids = blockedGidsFor(m);
+    const MASK = 0x1fffffff; // strip Tiled's flip flags
     layer.objects.filter(o => o.type === 'npc').forEach(o => {
       const id = (o.properties || []).find(p => p.name === 'npc')?.value;
       const tag = `${key}.json NPC object "${o.name}"`;
       if (!npcIds.has(id)) err(`${tag}: refers to unknown NPC id "${id}"`);
       const tx = Math.floor(o.x / 16), ty = Math.floor(o.y / 16);
-      const t = tiles && tiles[ty * m.width + tx];
-      if (t === 0 || t === 27) err(`${tag} is standing inside a wall at (${tx},${ty})`);
+      const gidAt = l => (l.data[ty * m.width + tx] || 0) & MASK;
+      const blocked = !tileLayers.length || gidAt(tileLayers[0]) === 0 || tileLayers.some(l => blockedGids.has(gidAt(l)));
+      if (blocked) err(`${tag} is standing inside a wall at (${tx},${ty})`);
     });
     const roomNames = new Set(layer.objects.filter(o => o.type === 'room').map(o => o.name));
+    layer.objects.filter(o => o.type === 'roof').forEach(o => {
+      const room = (o.properties || []).find(p => p.name === 'room')?.value;
+      if (room === undefined) err(`${key}.json roof object "${o.name}" has no "room" property. In Tiled, select it and click + at the bottom of the Properties panel: type string, name room, value = the room's name`);
+      else if (!roomNames.has(room)) err(`${key}.json roof object "${o.name}" refers to unknown room "${room}" (rooms in this map: ${[...roomNames].join(', ') || 'none'})`);
+    });
     layer.objects.filter(o => o.type === 'door' && (o.properties || []).some(p => p.name === 'target' && p.value === 'room')).forEach(o => {
       const room = (o.properties || []).find(p => p.name === 'room')?.value;
       if (!roomNames.has(room)) err(`${key}.json door "${o.name}" refers to unknown room "${room}"`);

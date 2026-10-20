@@ -26,7 +26,7 @@ class DungeonScene extends Phaser.Scene {
     super({ key: 'DungeonScene' });
 
     this.TILE_SIZE = 16;
-    this.BLOCKED_TILES = [0, 27];
+    // Which tiles block walking is decided in src/tilesets.js.
 
     this.isMoving = false;
 
@@ -71,7 +71,7 @@ class DungeonScene extends Phaser.Scene {
   preload() {
     // Reuse the same tileset image — Phaser caches it after MapScene
     // loads it, so this is effectively free on subsequent visits.
-    this.load.image('tiles', 'assets/kenny/tiny_dungeon/Tilemap/tilemap_packed.png');
+    Tilesets.preload(this); // every registered Kenney sheet (src/tilesets.js)
     this.load.tilemapTiledJSON(this.dungeonId, `assets/${this.dungeonId}.json`);
     this.load.image('player', 'assets/player.png');
     this.load.image('enemy', 'assets/enemy.png');
@@ -100,8 +100,10 @@ class DungeonScene extends Phaser.Scene {
 
     const map = this.make.tilemap({ key: this.dungeonId });
     this._loadDungeonObjects(map);
-    const tileset = map.addTilesetImage('kenney_tiny_dungeon', 'tiles');
-    this.groundLayer = map.createLayer('ground', tileset, 0, 0);
+    const built = Tilesets.build(this, map, this.dungeonId);
+    this.tileLayers = built.layers;
+    this.blockedGids = built.blockedGids;
+    this.groundLayer = built.layers[0];
     this.map = map;
 
     // --- Return data (from BattleScene) ---
@@ -237,9 +239,7 @@ class DungeonScene extends Phaser.Scene {
     if (tileX < 0 || tileY < 0 || tileX >= this.map.width || tileY >= this.map.height) {
       return true;
     }
-    const tile = this.groundLayer.getTileAt(tileX, tileY);
-    if (!tile) return true;
-    return this.BLOCKED_TILES.includes(tile.index);
+    return Tilesets.isBlocked(this.tileLayers, this.blockedGids, tileX, tileY);
   }
 
   // ─── Random encounter helpers ────────────────────────────────────────────

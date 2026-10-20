@@ -63,23 +63,61 @@ Goal: change the map and see it in the game. Nothing here can break game logic.
 
 Check: your tiles should appear in the right place. (Position check: the town is in the top-left corner; the first empty column to the east is x=40.)
 
-## 5. The rule you must know: which tiles block walking
+## 5. Adding more tile sheets (Tiny Town, Tiny Farm)
 
-This is the one place where drawing freely does not work yet.
+You can mix tiles from any registered sheet in one map. There is one rule that must be followed, or the game will not load the map:
 
-The game decides whether you can walk onto a tile using a short fixed list in the code:
+**Every tileset must be embedded in the map file, not saved as a separate file.** If you see `External tilesets unsupported. Use Embed Tileset and re-export` in the browser console, this is what went wrong.
 
-- **Empty cells** (nothing painted) block movement. They are the black void around the edge.
-- **Tile ID 26** blocks movement. This is the stone-frame wall piece you can see used for every building wall.
-- **Every other tile is walkable**, including tiles that look like walls (the brick tiles, for example).
+**The right way to add a sheet:**
 
-So if you paint a wall from, say, the brick tiles, the player will walk straight through it. For now, build walls with ID 26 (highlighted red in `tileset_ids.png`), and use the other tiles for decoration, floors, doors and furniture.
+1. Map > New Tileset (or the New Tileset button in the Tilesets panel).
+2. Type: "Based on Tileset Image".
+3. **Name:** give it a clear name, for example `kenney_tiny_town`. Tiled's default is `tilemap_packed` for every Kenney sheet, which is confusing. The game can still tell them apart by the image path, but a real name keeps you sane.
+4. **Tick "Embed in map".** This is the important box.
+5. Image: browse to `assets/kenny/tiny_town/Tilemap/tilemap_packed.png` (or `tiny_farm`).
+6. Tile width 16, tile height 16, margin 0, spacing 0. Click OK.
+7. Save.
 
-**The off-by-one gotcha.** Tiled numbers tiles starting at 0. The saved file and the game's own comments number them starting at 1, because 0 means "empty" there. So the wall tile is **ID 26 in Tiled** and **27 in the code, docs and map data**. The pictures in this repo use Tiled's numbering. If you read the number 27 anywhere else, it means the same tile as 26 here.
+**If you already added one and got the error:** in the Tilesets panel, click the tab of that tileset to select it. Look in the Tilesets panel's toolbar (the small buttons along the bottom or top of the panel) for **Embed Tileset**, and click it. Tiled copies the tileset into the map. Then save. Newer or older versions of Tiled place this button slightly differently. If you cannot find it, delete that tileset (select it, use Remove Tileset), and add it again using the steps above with "Embed in map" ticked. Tiles you already painted with it will go blank when you remove it, so do this before painting much.
 
-This limit is the next thing I plan to fix, so that you can mark any tile as a wall yourself. Until then, walls are ID 26.
+**To check:** run `npm.cmd run validate`. It reports an external tileset as an error and tells you what to do. You can also open `map.json` in a text editor and look at the `"tilesets"` list: every entry should contain an `"image"` line and none should contain `"source"`.
 
-## 6. Objects: the game logic
+Registered sheets are Tiny Dungeon, Tiny Town and Tiny Farm. A sheet from anywhere else needs a line added in `src/tilesets.js` first, or its tiles will not be drawn (the validator gives a warning).
+
+**Layers.** A map can have any number of tile layers (Layer > New > Tile Layer). They are drawn in the order shown in the Layers panel, bottom to top. A good pattern is `ground` for grass, floors and paths, then `decor` above it for trees, fences and buildings, so the trees' see-through edges show grass behind them. Keep the layer called `ground` first. Layers whose names you choose are all drawn.
+
+**Transparent tiles (wells, trees, signs) and the black background.** Many tiles have see-through parts. The game draws whatever is underneath, and if nothing is painted underneath, you get black. In Tiled it can look fine because Tiled shows its own background. The fix is always the same: paint a solid tile (grass, floor) on the `ground` layer first, then paint the see-through tile on the layer above it (`decor`). For a well: grass on `ground` in both cells, then the two well tiles on `decor` on the same two cells.
+
+Note that an empty cell on `ground` is void and blocks walking, so every cell you use needs something on `ground` anyway.
+
+**Roofs that disappear when you walk in.** Today the interior of a building is hidden by a plain black box until you step through its door. You can replace that with real roof tiles:
+
+1. Make a tile layer named `roof` (Layer > New > Tile Layer). Any name that starts with `roof` works, for example `roof` or `roof_2`. Keep it above the others in the Layers panel.
+2. Paint the roof tiles on that layer over the whole building, covering the floor you want hidden. The `ground` layer underneath keeps the floor and walls.
+3. On the `objects` layer, draw a rectangle over the roof tiles. Set its Class to `roof` and add a string property `room` with the building's room name (for example `inn`). This ties the roof to the room object that already exists for that building.
+4. Save and test. From outside you see the roof. When you step into the doorway the roof tiles disappear and you see the interior, with its NPC. When you leave, the roof comes back.
+
+A few details: roofs are drawn above everything, including NPCs and the player, and the game ignores the roof layer for walking, so you can walk under a roof tile. A room with no `roof` object keeps the old black cover, so you can convert buildings one at a time. If a `roof` object covers no painted tiles, the black cover is used.
+
+## 6. Which tiles block walking
+
+The game decides this from lists in `src/tilesets.js`, one list per sheet:
+
+- **Empty cells on the first (`ground`) layer** are void and block movement.
+- **Tiles in a sheet's blocked list** block movement, on any layer.
+- **Everything else is walkable.**
+
+So painting a tile does not make it solid by itself; the tile has to be in its sheet's list. Currently:
+
+- **Tiny Dungeon:** only the stone-frame wall piece (ID 26).
+- **Tiny Town and Tiny Farm:** a first guess I made by looking at the sheets: trees, fences, roofs, building and castle walls, windows, barn pieces, troughs, rocks. Doors and doorways are walkable on purpose.
+
+Walk around your new buildings and trees in the game. Where something blocks that should not, or lets you walk through something solid, tell me the tile ID (the numbers in `docs/tileset_ids_tiny_town.png` and `docs/tileset_ids_tiny_farm.png`) and I will change the list. It is a one-line edit.
+
+**Which number is which.** Tiled's Tilesets panel counts each sheet's tiles from 0, and so do the pictures in this repo. The saved map file stores a different number (the sheet's local ID plus an offset that depends on the order the tilesets were added) and the game works that out for you. You never need the saved number. The old docs sometimes said "tile 27" for the dungeon wall; that is the same tile as Tiled's ID 26.
+
+## 7. Objects: the game logic
 
 Objects live on the `objects` layer. Click that layer first, or the tools below will not work.
 
@@ -98,6 +136,7 @@ Spelling and capital letters matter. The game looks for exactly these words.
 | `door` | Rectangle over the doorway tile(s) | `target` = `room`, plus `room` = the room's name | Stepping on it reveals that room's interior |
 | `door` | Rectangle over the doorway tile(s) | `target` = `dungeon`, plus `dungeon` = the dungeon's id, for example `dungeon` | Stepping on it enters that dungeon. You reappear one tile south of the door's middle tile when you come out |
 | `room` | Rectangle covering the interior | none; the **Name** is the room's name, which the door's `room` property must match | Hidden under black until you step into its doorway |
+| `roof` | Rectangle over the building's roof tiles | `room` = the name of that building's room | Hides the roof tiles on the `roof` layer inside that rectangle while the player is in the room |
 | `npc` | Point | `npc` = an NPC id from the editor's NPCs tab, for example `innkeeper` | Places that NPC. The NPC stands on the tile the point falls in |
 
 Two more classes exist only inside a dungeon's own map file (they are not in `map.json`):
@@ -111,7 +150,7 @@ A dungeon map with no `objects` layer falls back to fixed values (this is how th
 
 **Position tips.** Zone, door and room rectangles should cover whole tiles, so keep Snap to Grid on. A rectangle's X, Y, width and height appear in the Properties panel in pixels; divide by 16 to get tiles. For a point, the NPC stands on the tile at (X ÷ 16, Y ÷ 16), rounded down.
 
-## 7. Second exercise: add a test zone
+## 8. Second exercise: add a test zone
 
 Goal: practise objects without risk.
 
@@ -120,7 +159,7 @@ Goal: practise objects without risk.
 3. Save, refresh the game, and walk into that area. You should see no random battles there, because it is now part of the town zone.
 4. Delete the rectangle (select it, press Delete), then save again.
 
-## 8. Checking your work
+## 9. Checking your work
 
 After saving in Tiled, open a terminal in the repo and run:
 
@@ -130,7 +169,7 @@ It reads the map and catches the common mistakes: an NPC object that points to a
 
 `npm.cmd test` should still report all tests passing.
 
-## 9. Making a new map (a dungeon)
+## 10. Making a new map (a dungeon)
 
 Do not start from Tiled's New Map dialog, because the tileset name and settings have to match the game exactly. Instead:
 
@@ -139,9 +178,9 @@ Do not start from Tiled's New Map dialog, because the tileset name and settings 
 3. Repaint the `ground` layer. Add an `objects` layer if it has none (Layer > New > Object Layer, named exactly `objects`) and add one `exit` rectangle and one `spawn` point.
 4. A door in `map.json` with `target` = `dungeon` and `dungeon` = `dungeon_2` leads there.
 
-Always keep the tileset name `kenney_tiny_dungeon` and the layer name `ground`.
+Keep the first tile layer named `ground`. Any tileset in the map must be embedded and be one of the registered sheets (section 5).
 
-## 10. Where things are on the current map
+## 11. Where things are on the current map
 
 The overworld is now **64 wide by 48 tall**. Everything that existed before is in the same place; the empty space was added to the right and bottom. In `map_overview.png`:
 
@@ -152,20 +191,24 @@ The overworld is now **64 wide by 48 tall**. Everything that existed before is i
 
 A suggested split, which is entirely your call: Town 2 in the east (around x 44–60, y 2–22), Dungeon 2's door somewhere in the south, and open ground between for the overworld.
 
-## 11. Troubleshooting
+## 12. Troubleshooting
 
 | Symptom | Likely cause and fix |
 |---|---|
 | Tiled says the tileset image is missing | Click the broken tileset, choose Browse, and select `assets/kenny/tiny_dungeon/Tilemap/tilemap_packed.png` |
 | The game shows a black screen after a save | A layer was renamed or deleted. They must be called `ground` and `objects`. Restore your backup copy and redo the change |
 | Changes do not show up | Hard refresh with Ctrl+F5, and make sure you saved in Tiled |
-| The player walks through a wall you painted | The tile is not ID 26 (see section 5) |
+| The player walks through a wall or tree you painted | That tile is not in its sheet's blocked list (see section 6) |
 | The player cannot walk where you expect | There is an empty cell or a wall tile there. Check the `ground` layer with the eye icon on the `objects` layer turned off |
 | An object does nothing | Check the Class spelling, the property name and its type (string), and that it is on the `objects` layer |
+| The browser console says `External tilesets unsupported` | A tileset was saved as a separate file. Embed it (section 5), save, and run `npm.cmd run validate` |
+| A see-through tile has a black box behind it | Nothing is painted under it. Paint a grass or floor tile on `ground`, and the see-through tile on a layer above (`decor`) |
+| A roof never disappears | The `roof` object's `room` property does not match the room's name, or the roof tiles are not on a layer whose name starts with `roof`. `npm.cmd run validate` reports an unknown room |
+| Tiles from a new sheet are blank in the game | The sheet is not registered in `src/tilesets.js`. The validator warns about this |
 | Tiled saved a `.tmx` file | You used a new map, not the JSON. Use File > Save As and pick the JSON map format, or work from the existing `.json` file |
 | The file looks very different in git after saving | Normal: Tiled rewrites the whole file in its own layout. Check that the game still works and that `npm.cmd run validate` is clean |
 
-## 12. Words you will see
+## 13. Words you will see
 
 - **Tile:** one 16×16 picture.
 - **Tileset:** the sheet of tiles.

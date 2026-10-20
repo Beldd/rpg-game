@@ -20,7 +20,7 @@ class MapScene extends Phaser.Scene {
     //  27  = wall divider row  → blocked
     //  41  = detailed floor    → walkable
     //  50  = stone floor       → walkable
-    this.BLOCKED_TILES = [0, 27];
+    // Which tiles block walking is decided in src/tilesets.js.
 
     // Tracks whether the player is currently mid-slide between tiles.
     // While true, new movement input is ignored — this is what makes
@@ -91,8 +91,8 @@ class MapScene extends Phaser.Scene {
 
   preload() {
     // Phaser's tilemap loader needs two things:
-    // 1. The Kenney tiny_dungeon packed tileset (192×176, 12×11, no spacing)
-    this.load.image('tiles', 'assets/kenny/tiny_dungeon/Tilemap/tilemap_packed.png');
+    // 1. The Kenney packed tilesets (192×176, 12×11, no spacing)
+    Tilesets.preload(this); // every registered Kenney sheet (src/tilesets.js)
 
     // Also load the same sheet as a spritesheet so individual tiles can be
     // used as NPC/character sprites via frame index. 16×16 tiles, no margin
@@ -126,12 +126,16 @@ class MapScene extends Phaser.Scene {
 
     // Tell the map which loaded image corresponds to which tileset
     // name referenced inside the JSON (we called it "placeholder" there)
-    const tileset = map.addTilesetImage('kenney_tiny_dungeon', 'tiles');
 
     // Create a visual layer from the "ground" layer defined in the JSON.
     // Store it on `this` so update() can later ask it "what tile is at
     // this position?" for collision checks.
-    this.groundLayer = map.createLayer('ground', tileset, 0, 0);
+    // All tile layers, with whichever tilesets the map uses (src/tilesets.js).
+    const built = Tilesets.build(this, map, 'map');
+    this.tileLayers = built.layers;
+    this.roofLayers = built.roofLayers;
+    this.blockedGids = built.blockedGids;
+    this.groundLayer = built.layers[0];
     this.map = map;
     this._loadMapObjects(map);
 
@@ -365,12 +369,23 @@ class MapScene extends Phaser.Scene {
    */
   _setupRooms() {
     const T = this.TILE_SIZE;
-    this._roomCovers = this._mapObjects.rooms.map(r => ({
-      room: r,
-      cover: this.add.rectangle(r.x1 * T, r.y1 * T, (r.x2 - r.x1 + 1) * T, (r.y2 - r.y1 + 1) * T, 0x000000, 1)
-        .setOrigin(0, 0)
-        .setDepth(1),
-    }));
+    this._roomCovers = this._mapObjects.rooms.map(r => {
+      // A room with real roof tiles (a "roof" object naming it, over tiles on a
+      // "roof" layer) hides them instead of using a black cover.
+      const roofTiles = [];
+      for (const rf of this._mapObjects.roofs.filter(f => f.room === r.name))
+        for (let y = rf.y1; y <= rf.y2; y++)
+          for (let x = rf.x1; x <= rf.x2; x++)
+            for (const layer of this.roofLayers || []) {
+              const t = layer.getTileAt(x, y);
+              if (t) roofTiles.push(t);
+            }
+      const cover = roofTiles.length ? null
+        : this.add.rectangle(r.x1 * T, r.y1 * T, (r.x2 - r.x1 + 1) * T, (r.y2 - r.y1 + 1) * T, 0x000000, 1)
+          .setOrigin(0, 0)
+          .setDepth(1);
+      return { room: r, cover, roofTiles };
+    });
   }
 
   /**
@@ -380,11 +395,13 @@ class MapScene extends Phaser.Scene {
    * player slides into it and hidden as soon as they step out.
    */
   _updateRooms(tileX, tileY) {
-    for (const { room, cover } of this._roomCovers) {
+    for (const { room, cover, roofTiles } of this._roomCovers) {
       const inside = tileX >= room.x1 && tileX <= room.x2 && tileY >= room.y1 && tileY <= room.y2;
       const inDoorway = this._mapObjects.doors.some(d =>
         d.room === room.name && d.tiles.some(t => t.x === tileX && t.y === tileY));
-      cover.setVisible(!(inside || inDoorway));
+      const revealed = inside || inDoorway;
+      if (cover) cover.setVisible(!revealed);
+      roofTiles.forEach(t => { t.alpha = revealed ? 0 : 1; }); // roof tiles fade away while you are in
     }
   }
 
@@ -407,6 +424,7 @@ class MapScene extends Phaser.Scene {
       zones: [{ zone: 'town', x1: 0, y1: 0, x2: 44, y2: 23 }],
       doors: [{ target: 'dungeon', dungeon: 'dungeon', tiles: [{ x: 31, y: 20 }, { x: 32, y: 20 }, { x: 33, y: 20 }] }],
       rooms: [],
+      roofs: [],
       // Fallback wizard (used only if map.json has no object layer).
       npcs: [{ id: 'wizard', x: 35, y: 21 }],
     };
@@ -424,6 +442,10 @@ class MapScene extends Phaser.Scene {
           for (let ty = Math.floor(o.y / T); ty < Math.ceil((o.y + o.height) / T); ty++)
             for (let tx = Math.floor(o.x / T); tx < Math.ceil((o.x + o.width) / T); tx++) tiles.push({ x: tx, y: ty });
           doors.push({ target: prop(o, 'target') || o.name, room: prop(o, 'room'), dungeon: prop(o, 'dungeon') || 'dungeon', tiles });
+        } else if (o.type === 'roof' && o.width) {
+          out.roofs.push({ room: prop(o, 'room'),
+            x1: Math.floor(o.x / T), y1: Math.floor(o.y / T),
+            x2: Math.ceil((o.x + o.width) / T) - 1, y2: Math.ceil((o.y + o.height) / T) - 1 });
         } else if (o.type === 'room' && o.width) {
           out.rooms.push({ name: o.name,
             x1: Math.floor(o.x / T), y1: Math.floor(o.y / T),
@@ -535,10 +557,8 @@ class MapScene extends Phaser.Scene {
 
     // getTileAt returns a Phaser Tile object; .index is the same
     // 1-based value we wrote into map.json's data array.
-    const tile = this.groundLayer.getTileAt(tileX, tileY);
-    if (!tile) return true; // no tile here at all = treat as blocked
-
-    return this.BLOCKED_TILES.includes(tile.index);
+    // Void on the base layer, or a blocking tile on any layer (src/tilesets.js).
+    return Tilesets.isBlocked(this.tileLayers, this.blockedGids, tileX, tileY);
   }
 
   /**

@@ -71,6 +71,12 @@ Needs Node 18+ and no installs.
 - Browser scripts are loaded into a Node `vm` sandbox (`tests/loadEditorData.js`), so the game code is tested unmodified.
 - Not covered yet: scenes, menus and rendering. These are checked by playing.
 
+## Tilesets and tile layers
+
+`src/tilesets.js` registers the tile sheets the game can draw (Kenney Tiny Dungeon, Tiny Town, Tiny Farm) and, for each, a list of LOCAL tile ids that block walking. `Tilesets.preload` loads every sheet; `Tilesets.build` attaches the right image to each tileset in a map and creates every tile layer, in file order. A tileset is recognised by its name or, because every Kenney sheet is called `tilemap_packed.png`, by the folder in its image path. Blocking works on global tile ids: each map's own `firstgid` is added to the local ids, so the order tilesets were added in Tiled does not matter. A cell is blocked if the base layer has nothing there, or if any layer holds a tile in a blocked list. Tilesets must be embedded in the map (Phaser cannot read external ones); `npm run validate` reports external or unregistered tilesets. The blocked lists for Tiny Town and Tiny Farm are first guesses to be tuned by walking them.
+
+Roofs: a tile layer whose name starts with `roof` is drawn at depth 2 (above players, NPCs and room covers, below the dialogue UI) and ignored for walking. A `roof` object in `map.json` with a `room` property names the room whose roof it is; `MapScene._setupRooms` collects the roof tiles inside it, and `_updateRooms` sets their `alpha` to 0 while the player is inside that room or in its doorway. A room with roof tiles gets no black cover; a room without them keeps the cover.
+
 ## Credits
 
 `src/credits.js` holds the Credits screen as data (a list of pages, each with a title and lines). `CreditsScene` shows them one page at a time; the title menu opens it. Add a line there for anything that needs attribution.
