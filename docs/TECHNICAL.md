@@ -88,3 +88,13 @@ A dungeon is a small map of its own, `assets/<id>.json`. The id doubles as the z
 ## Known gaps
 
 Zone borders, the dungeon door and the NPC position now come from the `objects` layer of `assets/map.json` (Tiled rectangles/points typed `zone`, `door`, `npc`, `room`; `MapScene._loadMapObjects` reads them and falls back to the old values if the layer is missing). The level curve is not data-driven yet. Scene and UI behavior has no automated tests; some files are leftovers (`src/domText2.js`, `assets/tileset.png`, `BootScene`).
+
+
+## Touch controls
+
+`src/touchControls.js` adds an on-screen D-pad plus A / B / Menu buttons. It does not touch any scene: each button dispatches synthetic `keydown` / `keyup` events on `window` (where Phaser listens), with `keyCode` set explicitly because WebKit leaves it 0. Mapping: D-pad = arrow keys, A = Enter, B = Escape, Menu = P.
+
+- **When it runs:** only if `(pointer: coarse)` matches, or `?touch=1`. `?touch=0` forces it off. Desktop layout is unchanged.
+- **Layout:** the 640x480 `#game-wrapper` is scaled with a CSS transform (canvas and DOM text scale together). Landscape: D-pad left, A/B right, game centred. Portrait: game on top, controls below.
+- **Minimum hold:** keyup is delayed so each press lasts at least 60 ms. Phaser samples keys once per frame, and a down+up inside one frame is dropped (found in testing).
+- **Not covered:** hold-to-repeat in menus (menus use JustDown, same as a keyboard); text that says "Press ENTER" still says Enter (it means A).

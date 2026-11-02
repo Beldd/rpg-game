@@ -35,7 +35,7 @@ This is a solo project. I am a games producer and product manager by background,
 
 The game is plain HTML and JavaScript on Phaser 3 with no build step.
 
-1. Serve this folder with any static web server (for example `python3 -m http.server`).
+1. Serve this folder with the included local server, `python tools/serve.py` (or `npm run serve`). It listens only on your own computer, hides dotfiles, and stops itself after 120 idle minutes. Any other static server also works, but the plain `python -m http.server` listens on every network interface, so other devices on your network can reach it.
 2. Open `index.html` for the game and `tools/editor.html` for the editor, using the same address and browser profile for both.
 
 An internet connection is needed for the Phaser CDN.
@@ -50,6 +50,7 @@ An internet connection is needed for the Phaser CDN.
 | Progression | XP and levels, item drops, gold rewards, gold spent at the inn, shop and hospital |
 | Menus | Party, Equip, Items, Save/Load |
 | Saving | Three slots plus an autosave after each victory |
+| Touch controls | On phones/tablets: on-screen D-pad, A (Enter), B (Esc) and Menu (P); `?touch=1` / `?touch=0` forces on/off |
 | Content tool | The editor above |
 
 ## Roadmap

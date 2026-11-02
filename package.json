@@ -3,6 +3,7 @@
   "private": true,
   "scripts": {
     "test": "node --test \"tests/*.test.js\"",
-    "validate": "node tools/validate-content.js"
+    "validate": "node tools/validate-content.js",
+    "serve": "python tools/serve.py"
   }
 }
